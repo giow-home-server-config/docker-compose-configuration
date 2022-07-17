@@ -1,0 +1,58 @@
+version: "3.7"
+
+services:
+  # DuckDns DNS Updater
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: duckdns
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      - SUBDOMAINS=$DUCKDNS_SUBDOMAINS
+      - TOKEN=$DUCKDNS_TOKEN
+      - LOG_FILE=false
+    volumes:
+      - ${USERDIR}/docker/duckdns:/config #optional
+
+  # Cloudflare-Companion - Automatic CNAME DNS Creation
+  cf-companion:
+    container_name: cf-companion
+    image: tiredofit/traefik-cloudflare-companion:latest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - TIMEZONE=$TZ
+      - TRAEFIK_VERSION=2
+      - CF_EMAIL=$CLOUDFLARE_EMAIL # Same as traefik
+      - CF_TOKEN=$CLOUDFLARE_API_KEY # Same as traefik
+      - TARGET_DOMAIN=$DOMAINNAME
+      - DOMAIN1=$DOMAINNAME
+      - DOMAIN1_ZONE_ID=$CLOUDFLARE_ZONEID # Copy from Cloudflare Overview page
+      - DOMAIN1_PROXIED=TRUE
+
+  # Ouroboros - Automatic Docker Container Updates
+  ouroboros:
+    image: pyouroboros/ouroboros:latest
+    container_name: ouroboros
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      TZ: $TZ
+      INTERVAL: 86400 # 24 hours
+      LOG_LEVEL: debug
+      SELF_UPDATE: "true"
+      CLEANUP: "true"
+      IGNORE: traefik plex tdarr syncthing wireguard sonarr radarr pihole ombi
+      NOTIFIERS: "tgram://$TGRAM_BOT_TOKEN/$TGRAM_CHAT_ID/"

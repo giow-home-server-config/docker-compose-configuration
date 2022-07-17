@@ -1,0 +1,108 @@
+version: "3.7"
+
+services:
+  ghost:
+    image: ghost:5-alpine
+    container_name: ghost
+    user: "${PUID}:${PGID}"
+    security_opt:
+      - no-new-privileges:true
+    restart: always
+    networks:
+      - t2_proxy
+      - default
+    volumes:
+      - ${USERDIR}/docker/ghost/content:/var/lib/ghost/content
+      - ${USERDIR}/docker/ghost/config.production.json:/var/lib/ghost/config.production.json
+    environment:
+      # see https://ghost.org/docs/config/#configuration-options
+      database__client: mysql
+      database__connection__host: ghost-db
+      database__connection__user: ${GHOST_DB_USER}
+      database__connection__password: ${GHOST_DB_PASSWORD}
+      database__connection__database: ${GHOST_DB}
+      url: https://${DOMAINNAME}
+    depends_on:
+      - ghost-db
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.ghost-rtr.entrypoints=https"
+      - "traefik.http.routers.ghost-rtr.rule=HostHeader(`$DOMAINNAME`, `www.$DOMAINNAME`)"
+      - "traefik.http.routers.ghost-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.ghost-rtr.middlewares=chain-no-auth@file" # No Authentication
+      ## HTTP Services
+      - "traefik.http.routers.ghost-rtr.service=ghost-svc"
+      - "traefik.http.services.ghost-svc.loadbalancer.server.port=2368"
+
+  ghost-db:
+    image: mysql:8.0
+    container_name: ghost-db
+    user: "${PUID}:${PGID}"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - default
+    restart: always
+    volumes:
+      - ${USERDIR}/docker/ghost/ghost-db:/var/lib/mysql
+    environment:
+      MYSQL_RANDOM_ROOT_PASSWORD: ${GHOST_DB_ROOT_PASSWD}
+      MYSQL_DATABASE: ${GHOST_DB}
+      MYSQL_USER: ${GHOST_DB_USER}
+      MYSQL_PASSWORD: ${GHOST_DB_PASSWORD}
+
+  # Comments for ghost server
+  commento:
+    image: registry.gitlab.com/commento/commento
+    container_name: commento
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    user: "${PUID}:${PGID}"
+    networks:
+      - t2_proxy
+      - default
+    environment:
+      COMMENTO_ORIGIN: https://commento.${DOMAINNAME}
+      COMMENTO_PORT: 8080
+      COMMENTO_POSTGRES: postgres://${COMMENTO_DB_USER}:${COMMENTO_DB_PASSWORD}@commento-db:5432/commento?sslmode=disable
+      COMMENTO_FORBID_NEW_OWNERS: "true"
+      COMMENTO_SMTP_HOST: ${COMMENTO_SMTP_HOST}
+      COMMENTO_SMTP_PORT: ${COMMENTO_SMTP_PORT}
+      COMMENTO_SMTP_USERNAME: ${COMMENTO_SMTP_USERNAME}
+      COMMENTO_SMTP_PASSWORD: ${COMMENTO_SMTP_PASSWORD}
+      COMMENTO_SMTP_FROM_ADDRESS: ${COMMENTO_SMTP_FROM_ADDRESS}
+    depends_on:
+      - commento-db
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.commento-rtr.entrypoints=https"
+      - "traefik.http.routers.commento-rtr.rule=HostHeader(`commento.$DOMAINNAME`)"
+      - "traefik.http.routers.commento-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.commento-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.commento-rtr.service=commento-svc"
+      - "traefik.http.services.commento-svc.loadbalancer.server.port=8080"
+
+  # DB for commento
+  commento-db:
+    # Needs to be 13.7 because commento doesnt update to support scram-sha-256
+    image: postgres:13.7-alpine
+    container_name: commento-db
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    user: "${PUID}:${PGID}"
+    networks:
+      - default
+    environment:
+      POSTGRES_DB: commento
+      POSTGRES_USER: ${COMMENTO_DB_USER}
+      POSTGRES_PASSWORD: ${COMMENTO_DB_PASSWORD}
+    volumes:
+      - ${USERDIR}/docker/commento/commento-db:/var/lib/postgresql/data:z
+      - /etc/passwd:/etc/passwd:ro

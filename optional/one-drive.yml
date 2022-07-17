@@ -1,0 +1,17 @@
+version: "3.7"
+
+services:
+  onedrive:
+    container_name: onedrive
+    image: driveone/onedrive:alpine
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - ONEDRIVE_UID=${PUID}
+      - ONEDRIVE_GID=${PGID}
+    volumes:
+      # Disks
+      - /mnt/hdd-sata-4/onedrive:/onedrive/data
+      - /mnt/hdd-sata-4/syncthing:/syncthing
+      - ${USERDIR}/docker/onedrive:/onedrive/conf

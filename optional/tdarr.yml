@@ -1,0 +1,38 @@
+version: "3.7"
+
+services:
+  tdarr:
+    image: haveagitgat/tdarr_aio
+    container_name: tdarr
+    restart: unless-stopped
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.97
+    security_opt:
+      - no-new-privileges:true
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      # Config
+      - ${USERDIR}/docker/tdarr:/home/Tdarr/Documents/Tdarr
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+      # Offload transcoding to RAM if you have enough RAM
+      - /dev/shm:/transcode
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.tdarr-rtr.entrypoints=https"
+      - "traefik.http.routers.tdarr-rtr.rule=HostHeader(`tdarr.$DOMAINNAME`)"
+      - "traefik.http.routers.tdarr-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.tdarr-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.tdarr-rtr.service=tdarr-svc"
+      - "traefik.http.services.tdarr-svc.loadbalancer.server.port=8265"

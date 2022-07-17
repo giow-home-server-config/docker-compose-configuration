@@ -1,0 +1,31 @@
+version: "3.7"
+
+services:
+  calibre-web:
+    image: lscr.io/linuxserver/calibre-web:latest
+    container_name: calibre-web
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK_SET=002
+      - TZ=${TZ}
+      - DOCKER_MODS=linuxserver/calibre-web:calibre
+    volumes:
+      - ${USERDIR}/docker/calibreweb/config:/config
+      - ${USERDIR}/Media/Books:/books
+    networks:
+      - t2_proxy
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.calibre-rtr.entrypoints=https"
+      - "traefik.http.routers.calibre-rtr.rule=HostHeader(`books.$DOMAINNAME`)"
+      - "traefik.http.routers.calibre-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.calibre-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.calibre-rtr.service=calibre-svc"
+      - "traefik.http.services.calibre-svc.loadbalancer.server.port=8083"

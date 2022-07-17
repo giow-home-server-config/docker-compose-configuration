@@ -1,0 +1,300 @@
+version: "3.7"
+
+services:
+  # Plex - Media Server
+  plex:
+    image: plexinc/pms-docker:plexpass
+    container_name: plex
+    restart: unless-stopped
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.95
+    security_opt:
+      - no-new-privileges:true
+    devices:
+      - /dev/dri:/dev/dri
+    ports:
+      - "$PLEX_PORT:32400/tcp" # Plex Server Port
+      # Do NOT forward these ports below through your router
+      - "32469:32469/tcp" # access to the Plex DLNA Server
+      - "1900:1900/udp" # access to the Plex DLNA Server
+      - "8324:8324/tcp" # controlling Plex for Roku via Plex Companion
+      - "32410:32410/udp" # current GDM network discovery
+      - "32412:32412/udp" # current GDM network discovery
+      - "32413:32413/udp" # current GDM network discovery
+      - "32414:32414/udp" # current GDM network discovery
+    volumes:
+      # Config
+      - $USERDIR/docker/plexms:/config
+      # Offload transcoding to RAM if you have enough RAM
+      - /dev/shm:/transcode
+      # - $USERDIR/Media/Transcode/plex_tmp:/transcode
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    environment:
+      TZ: $TZ
+      HOSTNAME: $PLEX_HOSTNAME
+      PLEX_CLAIM: $PLEX_CLAIM
+      PLEX_UID: $PUID
+      PLEX_GID: $PGID
+      ADVERTISE_IP: http://$SERVER_IP:$PLEX_PORT/
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.plex-rtr.entrypoints=https"
+      - "traefik.http.routers.plex-rtr.rule=HostHeader(`plex.$DOMAINNAME`)"
+      - "traefik.http.routers.plex-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.plex-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.plex-rtr.service=plex-svc"
+      - "traefik.http.services.plex-svc.loadbalancer.server.port=32400"
+
+  # Sonarr - Smart PVR for newsgroup and bittorrent users
+  sonarr:
+    image: "ghcr.io/linuxserver/sonarr:latest"
+    container_name: "sonarr"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "9001:8989/tcp" # LAN port
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - DOCKER_MODS=gilbn/theme.park:sonarr
+      - TP_THEME=plex
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.91
+    volumes:
+      # Config
+      - ${USERDIR}/docker/sonarrp:/config
+      - "/etc/localtime:/etc/localtime:ro"
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    deploy:
+      resources:
+        limits:
+          cpus: "0.8"
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth Bypass for NZB360
+      - "traefik.http.routers.sonarr-rtr-bypass.entrypoints=https"
+      - "traefik.http.routers.sonarr-rtr-bypass.rule=Headers(`X-Api-Key`, `$SONARR_API_KEY`) || Query(`apikey`, `$SONARR_API_KEY`)"
+      - "traefik.http.routers.sonarr-rtr-bypass.priority=100"
+      - "traefik.http.routers.sonarr-rtr-bypass.tls=true"
+      ## HTTP Routers Auth
+      - "traefik.http.routers.sonarr-rtr.entrypoints=https"
+      - "traefik.http.routers.sonarr-rtr.rule=HostHeader(`sonarr.$DOMAINNAME`)"
+      - "traefik.http.routers.sonarr-rtr.tls=true"
+      - "traefik.http.routers.sonarr-rtr.priority=99"
+      ## Middlewares
+      - "traefik.http.routers.sonarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.sonarr-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.sonarr-rtr.service=sonarr-svc"
+      - "traefik.http.routers.sonarr-rtr-bypass.service=sonarr-svc"
+      - "traefik.http.services.sonarr-svc.loadbalancer.server.port=8989"
+
+  # Radarr - A fork of Sonarr to work with movies à la Couchpotato.
+  radarr:
+    image: "lscr.io/linuxserver/radarr:latest"
+    container_name: "radarr"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "9002:7878/tcp" # LAN port
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - DOCKER_MODS=gilbn/theme.park:radarr
+      - TP_THEME=plex
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.92
+    deploy:
+      resources:
+        limits:
+          cpus: "0.8"
+    volumes:
+      # Config
+      - ${USERDIR}/docker/radarr:/config
+      - "/etc/localtime:/etc/localtime:ro"
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth Bypass for NZB360
+      - "traefik.http.routers.radarr-rtr-bypass.entrypoints=https"
+      - "traefik.http.routers.radarr-rtr-bypass.rule=Headers(`X-Api-Key`, `$RADARR_API_KEY`) || Query(`apikey`, `$RADARR_API_KEY`)"
+      - "traefik.http.routers.radarr-rtr-bypass.priority=100"
+      - "traefik.http.routers.radarr-rtr-bypass.tls=true"
+      ## HTTP Routers Auth
+      - "traefik.http.routers.radarr-rtr.entrypoints=https"
+      - "traefik.http.routers.radarr-rtr.rule=HostHeader(`radarr.$DOMAINNAME`)"
+      - "traefik.http.routers.radarr-rtr.tls=true"
+      - "traefik.http.routers.radarr-rtr.priority=99"
+      ## Middlewares
+      - "traefik.http.routers.radarr-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.radarr-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.radarr-rtr.service=radarr-svc"
+      - "traefik.http.services.radarr-svc.loadbalancer.server.port=7878"
+
+  # Jackett - API Support for your favorite torrent trackers
+  jackett:
+    image: "lscr.io/linuxserver/jackett:latest"
+    container_name: "jackett"
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "9003:9117/tcp" # LAN port
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+      - AUTO_UPDATE=true
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.89
+    deploy:
+      resources:
+        limits:
+          cpus: "0.8"
+    volumes:
+      # Config
+      - ${USERDIR}/docker/jackett:/config
+      - "/etc/localtime:/etc/localtime:ro"
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth Bypass for NZB360
+      - "traefik.http.routers.jackett-rtr-bypass.entrypoints=https"
+      - "traefik.http.routers.jackett-rtr-bypass.rule=Headers(`X-Api-Key`, `$JACKETT_API_KEY`) || Query(`apikey`, `$JACKETT_API_KEY`)"
+      - "traefik.http.routers.jackett-rtr-bypass.priority=100"
+      - "traefik.http.routers.jackett-rtr-bypass.tls=true"
+      ## HTTP Routers
+      - "traefik.http.routers.jackett-rtr.entrypoints=https"
+      - "traefik.http.routers.jackett-rtr.rule=HostHeader(`jackett.$DOMAINNAME`)"
+      - "traefik.http.routers.jackett-rtr.priority=99"
+      - "traefik.http.routers.jackett-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.jackett-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.jackett-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.jackett-rtr.service=jackett-svc"
+      - "traefik.http.routers.jackett-rtr-bypass.service=jackett-svc"
+      - "traefik.http.services.jackett-svc.loadbalancer.server.port=9117"
+
+  # Torrent Downloader - rTorrent BitTorrent client
+  rtorrent:
+    image: binhex/arch-rtorrentvpn:rtorrent-ps-1.1.r54.ga787dd9-1-17
+    container_name: rtorrent
+    hostname: rtorrent
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "9004:9080/tcp" # LAN port
+      - "49164:49164"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    environment:
+      - VPN_ENABLED=no
+      - VPN_USER=${VPN_USER}
+      - VPN_PASS=${VPN_PASS}
+      - VPN_PROV=${VPN_PROVIDER}
+      - VPN_OPTIONS=
+      - STRICT_PORT_FORWARD=yes
+      - ENABLE_WEBUI_AUTH=no
+      - ENABLE_RPC2=yes
+      - ENABLE_RPC2_AUTH=yes
+      - RPC2_USER=$RPC2_USERNAME
+      - RPC2_PASS=$RPC2_PASSWORD
+      - ENABLE_PRIVOXY=no
+      - ENABLE_AUTODL_IRSSI=no
+      - NAME_SERVERS=8.8.8.8,1.1.1.1
+      - UMASK=002
+      - DEBUG=true
+      - PHP_TZ=${TZ}
+      - PGID=${PGID}
+      - PUID=${PUID}
+    volumes:
+      # Config
+      - ${USERDIR}/docker/rtorrent-new:/config
+      - /etc/localtime:/etc/localtime:ro
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    deploy:
+      resources:
+        limits:
+          cpus: "0.8"
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.90
+    labels:
+      - "traefik.enable=true"
+      ## Bypass OAUTH for RPC2 (it still has its own auth)
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.entrypoints=https"
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.rule=HostHeader(`torrent.$DOMAINNAME`) && PathPrefix(`/RPC2`)"
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.priority=100"
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.tls=true"
+      ## HTTP Routers
+      - "traefik.http.routers.rtorrentvpn-rtr.entrypoints=https"
+      - "traefik.http.routers.rtorrentvpn-rtr.rule=HostHeader(`torrent.$DOMAINNAME`)"
+      - "traefik.http.routers.rtorrentvpn-rtr.priority=99"
+      - "traefik.http.routers.rtorrentvpn-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.rtorrentvpn-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.rtorrentvpn-rtr.service=rtorrentvpn-svc"
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.service=rtorrentvpn-svc"
+      - "traefik.http.services.rtorrentvpn-svc.loadbalancer.server.port=9080"
+
+  # Ombi - Media Requests
+  ombi:
+    image: lscr.io/linuxserver/ombi:latest
+    container_name: ombi
+    restart: unless-stopped
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.94
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${USERDIR}/docker/ombi:/config
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.ombi-rtr.entrypoints=https"
+      - "traefik.http.routers.ombi-rtr.rule=HostHeader(`pedidos.$DOMAINNAME`)"
+      - "traefik.http.routers.ombi-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.ombi-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.ombi-rtr.service=ombi-svc"
+      - "traefik.http.services.ombi-svc.loadbalancer.server.port=3579"

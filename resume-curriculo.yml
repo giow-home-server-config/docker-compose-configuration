@@ -1,0 +1,26 @@
+version: "3.7"
+
+services:
+  resume:
+    # Build resume on changes
+    build:
+        context: ${USERDIR}/docker/resume
+        dockerfile: Dockerfile
+        target: production-stage
+    container_name: resume
+    restart: always
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - t2_proxy
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.resume-rtr.entrypoints=https"
+      - "traefik.http.routers.resume-rtr.rule=HostHeader(`resume.$DOMAINNAME`, `curriculo.$DOMAINNAME`)"
+      - "traefik.http.routers.resume-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.resume-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.resume-rtr.service=resume-svc"
+      - "traefik.http.services.resume-svc.loadbalancer.server.port=80"

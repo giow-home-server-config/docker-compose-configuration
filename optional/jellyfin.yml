@@ -1,0 +1,45 @@
+version: "3.7"
+
+services:
+  jellyfin:
+    image: jellyfin/jellyfin:unstable
+    container_name: jellyfin
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.96
+    ports:
+      - "9010:8096"
+      - "8920:8920"
+      - "7359:7359/udp"
+      - "1900:1900/udp"
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+      - ${USERDIR}/docker/jellyfin:/config
+      # Offload transcoding to RAM if you have enough RAM
+      - /dev/shm:/transcode
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+      - UMASK_SET=002
+      - JELLYFIN_FFmpeg__probesize=10G
+      - JELLYFIN_FFmpeg__analyzeduration=500M
+      - JELLYFIN_PublishedServerUrl=https://jellyfin.${DOMAINNAME}
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.jellyfin-rtr.entrypoints=https"
+      - "traefik.http.routers.jellyfin-rtr.rule=Host(`jellyfin.$DOMAINNAME`)"
+      - "traefik.http.routers.jellyfin-rtr.tls=true"
+      ## Use these middlewares
+      - "traefik.http.routers.jellyfin-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.jellyfin-rtr.service=jellyfin-svc"
+      - "traefik.http.services.jellyfin-svc.loadbalancer.server.port=8096"

@@ -1,0 +1,34 @@
+version: "3.7"
+
+services:
+  # Portainer - WebUI for Containers
+  portainer:
+    container_name: portainer
+    image: portainer/portainer-ce:2.1.0-alpine
+    restart: unless-stopped
+    command: -H unix:///var/run/docker.sock
+    networks:
+      - t2_proxy
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      # Portainer LAN port
+      - "9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - $USERDIR/docker/portainer/data:/data
+    environment:
+      - TZ=$TZ
+    labels:
+      # Enable access to resources deployed outside of Portainer
+      - "io.portainer.accesscontrol.users=giow"
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.portainer-rtr.entrypoints=https"
+      - "traefik.http.routers.portainer-rtr.rule=HostHeader(`portainer.$DOMAINNAME`)"
+      - "traefik.http.routers.portainer-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.portainer-rtr.middlewares=chain-oauth@file" # Google OAuth 2.0
+      ## HTTP Services
+      - "traefik.http.routers.portainer-rtr.service=portainer-svc"
+      - "traefik.http.services.portainer-svc.loadbalancer.server.port=9000"

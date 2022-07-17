@@ -1,0 +1,66 @@
+version: "3.7"
+
+services:
+  # Samba server running on Alpine
+  samba:
+    image: stanback/alpine-samba:latest
+    container_name: samba
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      # Config and scripts
+      - ${USERDIR}/docker/samba/samba.conf:/etc/samba/smb.conf
+      - ${USERDIR}/docker/samba/start_server.sh:/start_server.sh
+      # Disks
+      - /mnt/hdd-sata-4/nas/share:/share
+      - /mnt/hdd-sata-4/nas/giow:/giow
+      - /mnt/hdd-sata-4/syncthing:/syncthing
+      - /mnt/hdd-sata-4/:/hdd-disk-4
+    environment:
+      - USERID=${PUID}
+      - GROUPID=${PGID}
+      - TZ=${TZ}
+    ports:
+      # Samba default port, we won't use 190 because it is vulnerable
+      - 445:445
+    entrypoint: ["/bin/sh", "/start_server.sh"]
+
+  syncthing:
+    image: lscr.io/linuxserver/syncthing:latest
+    container_name: syncthing
+    hostname: syncthing #optional
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.81
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    volumes:
+      # Config
+      - ${USERDIR}/docker/syncthing:/config
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    ports:
+      # Do NOT forward these ports below through your router
+      - 9005:8384 # Application WebUI
+      - 22000:22000/tcp # Listening port (TCP)
+      - 22000:22000/udp # Listening port (UDP)
+      - 21027:21027/udp # Protocol discovery
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.syncthing-rtr.entrypoints=https"
+      - "traefik.http.routers.syncthing-rtr.rule=HostHeader(`syncthing.$DOMAINNAME`)"
+      - "traefik.http.routers.syncthing-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.syncthing-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.syncthing-rtr.service=syncthing-svc"
+      - "traefik.http.services.syncthing-svc.loadbalancer.server.port=8384"

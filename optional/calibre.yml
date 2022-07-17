@@ -1,0 +1,41 @@
+version: "3.7"
+
+services:
+  calibre:
+    image: lscr.io/linuxserver/calibre:latest
+    container_name: calibre
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.7"
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.102
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - UMASK_SET=002 #optional
+      - TZ=${TZ}
+    volumes:
+      # Config
+      - ${USERDIR}/docker/calibre/config:/config
+      # Disks
+      - ${USERDIR}/Media/Books:/books
+      - ${USERDIR}/Media/AutoimportBooks:/autoimport
+    ports:
+      - 9006:8080
+      - 9008:8081
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.calibrerdp-rtr.entrypoints=https"
+      - "traefik.http.routers.calibrerdp-rtr.rule=HostHeader(`calibre.$DOMAINNAME`)"
+      - "traefik.http.routers.calibrerdp-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.calibrerdp-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.calibrerdp-rtr.service=calibrerdp-svc"
+      - "traefik.http.services.calibrerdp-svc.loadbalancer.server.port=8080"
