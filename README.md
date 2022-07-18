@@ -6,7 +6,7 @@ This repository contains the docker-compose.yml files used in my home setup.
 docker-compose -p home-server \
 --env-file .env \
 -f reverse-proxy.yml \
--f container.yml
+-f container.yml \
 up -d
 ```
 
