@@ -244,10 +244,6 @@ services:
       - /mnt/:/disks/other/
       - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
       - ${USERDIR}/Media:/disks/hdd-sata-0/Media
-    deploy:
-      resources:
-        limits:
-          cpus: "0.8"
     networks:
       t2_proxy:
         ipv4_address: 192.168.90.90
