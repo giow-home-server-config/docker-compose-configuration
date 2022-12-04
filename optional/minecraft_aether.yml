@@ -1,0 +1,49 @@
+version: "3.7"
+
+services:
+  minecraft:
+    image: itzg/minecraft-server:java8
+    container_name: minecraft
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - 24445:25565
+    environment:
+      EULA: "TRUE"
+      TYPE: CURSEFORGE
+      CF_SERVER_MOD: "/modpacks/aether-1.12.2-v1.5.3.2.jar"
+      CF_BASE_DIR: "/data"
+      UID: ${PUID}
+      GID: ${PGID}
+      MEMORY: 2G
+      MOTD: "\u00A7lBem Vindo ao mundo!"
+      DIFFICULTY: normal
+      MAX_PLAYERS: 25
+      VIEW_DISTANCE: 5
+      ONLINE_MODE: "false"
+      ALLOW_FLIGHT: "false"
+      # WHITELIST_FILE: "/data/whitelist.json"
+      ENABLE_RCON: "true"
+      RCON_PASSWORD: ${RCON_PASSWORD}
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+    volumes:
+      - ${USERDIR}/docker/minecraft/data:/data
+      - ${USERDIR}/docker/minecraft/modpacks:/modpacks
+      - ${USERDIR}/docker/minecraft/extra/whitelist.json:/data/whitelist.json
+
+  minecraft-backup:
+    image: itzg/mc-backup
+    container_name: minecraft-backup
+    environment:
+      BACKUP_INTERVAL: "24h"
+      PAUSE_IF_NO_PLAYERS: "true"
+      PRUNE_BACKUPS_DAYS: 5
+      INITIAL_DELAY: "10m"
+      # instead of network_mode below, could declare RCON_HOST
+      RCON_HOST: minecraft
+      RCON_PASSWORD: ${RCON_PASSWORD}
+    volumes:
+    - ${USERDIR}/docker/minecraft/data:/data:ro
+    - ${USERDIR}/docker/minecraft/backups:/backups

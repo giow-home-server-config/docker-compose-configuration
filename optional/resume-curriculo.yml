@@ -2,7 +2,6 @@ version: "3.7"
 
 services:
   resume:
-    # Build resume on changes
     build:
         context: ${USERDIR}/docker/resume
         dockerfile: Dockerfile

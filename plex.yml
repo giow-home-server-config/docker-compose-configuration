@@ -17,7 +17,7 @@ services:
       - "$PLEX_PORT:32400/tcp" # Plex Server Port
       # Do NOT forward these ports below through your router
       - "32469:32469/tcp" # access to the Plex DLNA Server
-      - "1900:1900/udp" # access to the Plex DLNA Server
+      #- "1900:1900/udp" # access to the Plex DLNA Server
       - "8324:8324/tcp" # controlling Plex for Roku via Plex Companion
       - "32410:32410/udp" # current GDM network discovery
       - "32412:32412/udp" # current GDM network discovery
@@ -66,7 +66,7 @@ services:
       - PGID=${PGID}
       - TZ=${TZ}
       - DOCKER_MODS=gilbn/theme.park:sonarr
-      - TP_THEME=plex
+      - TP_THEME=dark
     networks:
       t2_proxy:
         ipv4_address: 192.168.90.91
@@ -81,7 +81,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.8"
+          cpus: "2.5"
+          memory: 1024M
     labels:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
@@ -123,7 +124,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.8"
+          cpus: "2.5"
+          memory: 1024M
     volumes:
       # Config
       - ${USERDIR}/docker/radarr:/config
@@ -132,7 +134,6 @@ services:
       - /mnt/:/disks/other/
       - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
       - ${USERDIR}/Media:/disks/hdd-sata-0/Media
-
     labels:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
@@ -172,7 +173,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.8"
+          cpus: "2.5"
+          memory: 1024M
     volumes:
       # Config
       - ${USERDIR}/docker/jackett:/config
@@ -201,44 +203,186 @@ services:
       - "traefik.http.routers.jackett-rtr-bypass.service=jackett-svc"
       - "traefik.http.services.jackett-svc.loadbalancer.server.port=9117"
 
-  # Torrent Downloader - rTorrent BitTorrent client
-  rtorrent:
-    image: binhex/arch-rtorrentvpn:rtorrent-ps-1.1.r54.ga787dd9-1-17
-    container_name: rtorrent
-    hostname: rtorrent
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    ports:
-      - "9004:9080/tcp" # LAN port
-      - "49164:49164"
-    cap_add:
-      - NET_ADMIN
-    devices:
-      - /dev/net/tun
+  flaresolverr:
+    # DockerHub mirror flaresolverr/flaresolverr:latest
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.93
+    deploy:
+      resources:
+        limits:
+          cpus: "2.5"
+          memory: 1024M
+    container_name: flaresolverr
     environment:
-      - VPN_ENABLED=no
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_HTML=${LOG_HTML:-false}
+      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+      - TZ=${TZ}
+    ports:
+      - "${PORT:-8191}:8191"
+    restart: unless-stopped
+
+  qbittorrent:
+    container_name: qbittorrent
+    image: binhex/arch-qbittorrentvpn:latest
+    restart: unless-stopped
+    logging:
+      driver: json-file
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.104
+    ports:
+      - 9012:8080/tcp
+      # - 8119:8118/tcp # Privoxy
+    privileged: true
+    deploy:
+      resources:
+        limits:
+          memory: 3000M
+    cap_add:
+      - SYS_ADMIN
+    sysctls:
+      - net.ipv4.conf.all.src_valid_mark=1
+    environment:
+      - PGID=${PGID}
+      - PUID=${PUID}
+      - TZ=${TZ}
+      - UMASK=022
+      - DEBUG=false
+      - VPN_ENABLED=${VPN_ENABLED}
+      - VPN_CLIENT=${VPN_CLIENT}
       - VPN_USER=${VPN_USER}
       - VPN_PASS=${VPN_PASS}
       - VPN_PROV=${VPN_PROVIDER}
-      - VPN_OPTIONS=
       - STRICT_PORT_FORWARD=yes
-      - ENABLE_WEBUI_AUTH=no
-      - ENABLE_RPC2=yes
-      - ENABLE_RPC2_AUTH=yes
-      - RPC2_USER=$RPC2_USERNAME
-      - RPC2_PASS=$RPC2_PASSWORD
+      # This is needed if the server running the torrent client is outside your network
       - ENABLE_PRIVOXY=no
-      - ENABLE_AUTODL_IRSSI=no
-      - NAME_SERVERS=8.8.8.8,1.1.1.1
-      - UMASK=002
-      - DEBUG=true
-      - PHP_TZ=${TZ}
+      - LAN_NETWORK=192.168.1.0/24
+      - NAME_SERVERS=84.200.69.80,37.235.1.174,1.1.1.1,37.235.1.177,84.200.70.40,1.0.0.1
+      - WEBUI_PORT=8080
+    volumes:
+      # Config
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/docker/qbittorrent:/config:rw
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers Auth Bypass for NZB360
+      - "traefik.http.routers.qbit-rtr-bypass.entrypoints=https"
+      - "traefik.http.routers.qbit-rtr-bypass.rule=Headers(`HEADER_BYPASS`, `$HEADER_BYPASS`)"
+      - "traefik.http.routers.qbit-rtr-bypass.priority=100"
+      - "traefik.http.routers.qbit-rtr-bypass.tls=true"
+      ## HTTP Routers
+      - "traefik.http.routers.qbit-rtr.entrypoints=https"
+      - "traefik.http.routers.qbit-rtr.rule=HostHeader(`torrent.$DOMAINNAME`)"
+      - "traefik.http.routers.qbit-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.qbit-rtr.middlewares=chain-oauth@file"
+      ## Middlewares - Bypass
+      - "traefik.http.routers.qbit-rtr-bypass.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.qbit-rtr.service=qbit-svc"
+      - "traefik.http.routers.sonarr-rtr-bypass.service=qbit-svc"
+      - "traefik.http.services.qbit-svc.loadbalancer.server.port=8080"
+
+  # # Torrent Downloader - rTorrent BitTorrent client
+  # rtorrent:
+  #   #image: binhex/arch-rtorrentvpn:rtorrent-ps-1.1.r54.ga787dd9-1-17
+  #   image: binhex/arch-rtorrentvpn
+  #   container_name: rtorrent
+  #   hostname: rtorrent
+  #   restart: unless-stopped
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   ports:
+  #     - "9004:9080/tcp" # LAN port
+  #     - "49164:49164"
+  #   cap_add:
+  #     - NET_ADMIN
+  #   devices:
+  #     - /dev/net/tun
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 3000M
+  #   environment:
+  #     - VPN_ENABLED=no
+  #     - VPN_USER=${VPN_USER}
+  #     - VPN_PASS=${VPN_PASS}
+  #     - VPN_PROV=${VPN_PROVIDER}
+  #     - VPN_OPTIONS=
+  #     - STRICT_PORT_FORWARD=yes
+  #     - ENABLE_WEBUI_AUTH=no
+  #     - ENABLE_RPC2=yes
+  #     - ENABLE_RPC2_AUTH=yes
+  #     - RPC2_USER=$RPC2_USERNAME
+  #     - RPC2_PASS=$RPC2_PASSWORD
+  #     - ENABLE_PRIVOXY=no
+  #     - ENABLE_AUTODL_IRSSI=no
+  #     - NAME_SERVERS=84.200.69.80,37.235.1.174,1.1.1.1,37.235.1.177,84.200.70.40,1.0.0.1
+  #     - UMASK=002
+  #     - DEBUG=true
+  #     - PHP_TZ=${TZ}
+  #     - PGID=${PGID}
+  #     - PUID=${PUID}
+  #   volumes:
+  #     # Config
+  #     - ${USERDIR}/docker/rtorrent-new:/config
+  #     - /etc/localtime:/etc/localtime:ro
+  #     # Disks
+  #     - /mnt/:/disks/other/
+  #     - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+  #     - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+  #   networks:
+  #     t2_proxy:
+  #       ipv4_address: 192.168.90.90
+  #   labels:
+  #     - "traefik.enable=true"
+  #     ## Bypass OAUTH for RPC2 (it still has its own auth)
+  #     - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.entrypoints=https"
+  #     - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.rule=HostHeader(`torrent.$DOMAINNAME`) && PathPrefix(`/RPC2`)"
+  #     - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.priority=100"
+  #     - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.tls=true"
+  #     ## HTTP Routers
+  #     - "traefik.http.routers.rtorrentvpn-rtr.entrypoints=https"
+  #     - "traefik.http.routers.rtorrentvpn-rtr.rule=HostHeader(`torrent.$DOMAINNAME`)"
+  #     - "traefik.http.routers.rtorrentvpn-rtr.priority=99"
+  #     - "traefik.http.routers.rtorrentvpn-rtr.tls=true"
+  #     ## Middlewares
+  #     - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.middlewares=chain-no-auth@file"
+  #     - "traefik.http.routers.rtorrentvpn-rtr.middlewares=chain-oauth@file"
+  #     ## HTTP Services
+  #     - "traefik.http.routers.rtorrentvpn-rtr.service=rtorrentvpn-svc"
+  #     - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.service=rtorrentvpn-svc"
+  #     - "traefik.http.services.rtorrentvpn-svc.loadbalancer.server.port=9080"
+
+  # Flood
+  flood:
+    image: jesec/flood:master-distroless
+    container_name: flood
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "9013:3001/tcp" # LAN port
+    command: --port 3001 --allowedpath /disks
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    environment:
+      - HOME=/config
       - PGID=${PGID}
       - PUID=${PUID}
     volumes:
       # Config
-      - ${USERDIR}/docker/rtorrent-new:/config
+      - ${USERDIR}/docker/flood:/config
       - /etc/localtime:/etc/localtime:ro
       # Disks
       - /mnt/:/disks/other/
@@ -246,51 +390,88 @@ services:
       - ${USERDIR}/Media:/disks/hdd-sata-0/Media
     networks:
       t2_proxy:
-        ipv4_address: 192.168.90.90
+        ipv4_address: 192.168.90.101
     labels:
       - "traefik.enable=true"
-      ## Bypass OAUTH for RPC2 (it still has its own auth)
-      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.entrypoints=https"
-      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.rule=HostHeader(`torrent.$DOMAINNAME`) && PathPrefix(`/RPC2`)"
-      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.priority=100"
-      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.tls=true"
       ## HTTP Routers
-      - "traefik.http.routers.rtorrentvpn-rtr.entrypoints=https"
-      - "traefik.http.routers.rtorrentvpn-rtr.rule=HostHeader(`torrent.$DOMAINNAME`)"
-      - "traefik.http.routers.rtorrentvpn-rtr.priority=99"
-      - "traefik.http.routers.rtorrentvpn-rtr.tls=true"
+      - "traefik.http.routers.flood-rtr.entrypoints=https"
+      - "traefik.http.routers.flood-rtr.rule=HostHeader(`flood.$DOMAINNAME`)"
+      - "traefik.http.routers.flood-rtr.tls=true"
       ## Middlewares
-      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.middlewares=chain-no-auth@file"
-      - "traefik.http.routers.rtorrentvpn-rtr.middlewares=chain-oauth@file"
+      - "traefik.http.routers.flood-rtr.middlewares=chain-oauth@file"
       ## HTTP Services
-      - "traefik.http.routers.rtorrentvpn-rtr.service=rtorrentvpn-svc"
-      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.service=rtorrentvpn-svc"
-      - "traefik.http.services.rtorrentvpn-svc.loadbalancer.server.port=9080"
+      - "traefik.http.routers.flood-rtr.service=flood-svc"
+      - "traefik.http.services.flood-svc.loadbalancer.server.port=3001"
 
-  # Ombi - Media Requests
-  ombi:
-    image: lscr.io/linuxserver/ombi:latest
-    container_name: ombi
-    restart: unless-stopped
+
+  # Overseerr - Media Requests
+  overseerr:
+   image: lscr.io/linuxserver/overseerr:latest
+   container_name: overseerr
+   restart: unless-stopped
+   networks:
+     t2_proxy:
+       ipv4_address: 192.168.90.96
+   security_opt:
+     - no-new-privileges:true
+   volumes:
+     - ${USERDIR}/docker/overseerr:/config
+     - ${USERDIR}/docker/overseerr/logo-branca.svg:/app/overseerr/public/logo_stacked.svg
+     - ${USERDIR}/docker/overseerr/logo-branca.svg:/app/overseerr/public/logo_full.svg
+     - ${USERDIR}/docker/overseerr/logo-branca.png:/app/overseerr/public/logo_full.png
+   environment:
+     - PUID=$PUID
+     - PGID=$PGID
+     - TZ=$TZ
+   labels:
+     - "traefik.enable=true"
+     ## HTTP Routers
+     - "traefik.http.routers.overseerr-rtr.entrypoints=https"
+     - "traefik.http.routers.overseerr-rtr.rule=HostHeader(`pedidos.$DOMAINNAME`)"
+     - "traefik.http.routers.overseerr-rtr.tls=true"
+     ## Middlewares
+     - "traefik.http.routers.overseerr-rtr.middlewares=chain-no-auth@file"
+     ## HTTP Services
+     - "traefik.http.routers.overseerr-rtr.service=overseerr-svc"
+     - "traefik.http.services.overseerr-svc.loadbalancer.server.port=5055"
+
+  tautulli:
+    image: lscr.io/linuxserver/tautulli:latest
+    container_name: tautulli
     networks:
       t2_proxy:
-        ipv4_address: 192.168.90.94
-    security_opt:
-      - no-new-privileges:true
-    volumes:
-      - ${USERDIR}/docker/ombi:/config
+        ipv4_address: 192.168.90.103
     environment:
-      - PUID=$PUID
-      - PGID=$PGID
-      - TZ=$TZ
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${USERDIR}/docker/tautulli:/config
+    restart: unless-stopped
+    ports:
+      - 9011:8181
     labels:
       - "traefik.enable=true"
       ## HTTP Routers
-      - "traefik.http.routers.ombi-rtr.entrypoints=https"
-      - "traefik.http.routers.ombi-rtr.rule=HostHeader(`pedidos.$DOMAINNAME`)"
-      - "traefik.http.routers.ombi-rtr.tls=true"
+      - "traefik.http.routers.tautulli-rtr.entrypoints=https"
+      - "traefik.http.routers.tautulli-rtr.rule=HostHeader(`tautulli.$DOMAINNAME`)"
+      - "traefik.http.routers.tautulli-rtr.tls=true"
       ## Middlewares
-      - "traefik.http.routers.ombi-rtr.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.tautulli-rtr.middlewares=chain-oauth@file"
       ## HTTP Services
-      - "traefik.http.routers.ombi-rtr.service=ombi-svc"
-      - "traefik.http.services.ombi-svc.loadbalancer.server.port=3579"
+      - "traefik.http.routers.tautulli-rtr.service=tautulli-svc"
+      - "traefik.http.services.tautulli-svc.loadbalancer.server.port=8181"
+
+
+  # searcharr:
+  #   container_name: searcharr
+  #   image: searcharr_custom_alias
+  #   networks:
+  #     t2_proxy:
+  #   volumes:
+  #     - ${USERDIR}/docker/searcharr/data:/app/data
+  #     - ${USERDIR}/docker/searcharr/logs:/app/logs
+  #     - ${USERDIR}/docker/searcharr/settings.py:/app/settings.py
+  #   environment:
+  #     - TZ=${TZ}
+  #   restart: unless-stopped

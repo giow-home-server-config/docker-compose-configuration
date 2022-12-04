@@ -1,0 +1,68 @@
+version: "3.7"
+
+services:
+  frigate:
+    container_name: frigate
+    privileged: true # this may not be necessary for all setups
+    restart: unless-stopped
+    image: blakeblackshear/frigate:stable-amd64
+    shm_size: "256mb" # update for your cameras based on calculation above
+    devices:
+      - /dev/dri:/dev/dri
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
+      - ${USERDIR}/docker/frigate/config.yml:/config/config.yml:ro
+      - ${USERDIR}/docker/frigate/storage:/media/frigate
+      - type: tmpfs # Optional: 1GB of memory, reduces SSD/SD Card wear
+        target: /tmp/cache
+        tmpfs:
+          size: 2000000000
+    networks:
+      - default
+    ports:
+      - "5000:5000"
+      # - "1935:1935" # RTMP feeds
+    environment:
+      FRIGATE_RTSP_PASSWORD: ${FRIGATE_PASS}
+
+  mqtt:
+    container_name: mqtt
+    image: eclipse-mosquitto:1.6
+    restart: unless-stopped
+    networks:
+      - default
+    ports:
+      - "1883:1883"
+
+  homeassistant:
+    image: lscr.io/linuxserver/homeassistant:latest
+    container_name: homeassistant
+    network_mode: host
+    environment:
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      - ${USERDIR}/docker/homeassistant/:/config
+    ports:
+      - 8123:8123 #optional
+    restart: unless-stopped
+
+  go2rtc:
+    image: alexxit/go2rtc
+    container_name: go2rtc
+    network_mode: host
+    restart: always
+    volumes:
+      -  ${USERDIR}/docker/go2rtc/go2rtc.yaml:/config/go2rtc.yaml
+
+  # rtsp-relay:
+  # image: aler9/rtsp-simple-server
+  # container_name: rtsp-relay
+  # network_mode: host
+  # environment:
+  #   - PUID=${PUID}
+  #   - PGID=${PGID}
+  #   - TZ=${TZ}
+  # volumes:
+  #   - ${USERDIR}/docker/rtsp-simple-server/rtsp-simple-server.yml:/rtsp-simple-server.yml

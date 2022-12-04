@@ -1,0 +1,73 @@
+version: "3.7"
+services:
+  wpp-bridge:
+    container_name: wpp-bridge
+    image: dock.mau.dev/mautrix/whatsapp:latest
+    restart: unless-stopped
+    volumes:
+      - ${USERDIR}/docker/wpp-bridge:/data
+    environment:
+      - POSTGRES_DB=wpp-bridge
+      - POSTGRES_HOST=wpp-db
+      - POSTGRES_USER=${WPP_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${WPP_POSTGRES_PASSWORD}
+      - TZ=${TZ}
+    ports:
+      - 29318:29318
+    networks:
+      - backend
+    depends_on:
+      - wpp-db
+      #- synapse
+
+  wpp-db:
+    container_name: wpp-db
+    image: docker.io/postgres:10-alpine
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=wpp-bridge
+      - POSTGRES_USER=${WPP_POSTGRES_USER}
+      - POSTGRES_PASSWORD=${WPP_POSTGRES_PASSWORD}
+      - TZ=${TZ}
+    volumes:
+      - ${USERDIR}/docker/wpp-bridge-db:/var/lib/postgresql/data
+    networks:
+      - backend
+
+  synapse:
+    container_name: synapse
+    image: matrixdotorg/synapse:latest
+    restart: unless-stopped
+    environment:
+      - SYNAPSE_SERVER_NAME=${MATRIX_HOSTNAME}
+      - SYNAPSE_REPORT_STATS=no
+      - POSTGRES_DB=synapse
+      - POSTGRES_HOST=synapse-db
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - TZ=${TZ}
+    ports:
+      - 8008:8008
+    volumes:
+      - ${USERDIR}/docker/synapse:/data
+    depends_on:
+      - synapse-db
+    networks:
+      - backend
+    #command: generate
+
+  synapse-db:
+    container_name: synapse-db
+    image: docker.io/postgres:10-alpine
+    environment:
+      - POSTGRES_DB=synapse
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - ${USERDIR}/docker/synapse-db:/var/lib/postgresql/data
+    networks:
+      - backend
+
+networks:
+  backend:

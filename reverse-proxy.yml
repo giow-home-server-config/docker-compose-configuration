@@ -3,8 +3,8 @@ version: "3.7"
 # NETWORKS
 networks:
   t2_proxy:
-    external:
-      name: t2_proxy
+    external: true
+    name: t2_proxy
   default:
     driver: bridge
 
@@ -106,7 +106,7 @@ services:
       - INSECURE_COOKIE=false
       - AUTH_HOST=oauth.$DOMAINNAME
       - URL_PATH=/_oauth
-      - WHITELIST=$MY_EMAIL,$MY_EMAIL2
+      - WHITELIST=$EMAIL_WHITELIST
       - LOG_LEVEL=warn
       - LOG_FORMAT=text
       - LIFETIME=2592000 # 30 days

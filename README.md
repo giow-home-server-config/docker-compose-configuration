@@ -51,7 +51,7 @@ The optional are services that are not usually executed but are good to have:
 
 ## To run a single container with reverse proxy:
 ```bash
-docker-compose -p home-server \
+docker compose -p home-server \
 --env-file .env \
 -f reverse-proxy.yml \
 -f container.yml \
@@ -61,7 +61,7 @@ up -d
 ## To run the compose files inside this folder
 To run all the containers use the following:
 ```bash
-docker-compose --compatibility -p home-server \
+docker compose --compatibility -p home-server \
 --env-file .env \
 -f reverse-proxy.yml \
 -f companions.yml \
@@ -78,7 +78,7 @@ up -d
 
 ## To run the compose files from any folder
 ```bash
-docker-compose --compatibility -p home-server \
+docker compose --compatibility -p home-server \
 --env-file ~/docker/docker-compose-files/.env \
 -f ~/docker/docker-compose-files/reverse-proxy.yml \
 -f ~/docker/docker-compose-files/companions.yml \

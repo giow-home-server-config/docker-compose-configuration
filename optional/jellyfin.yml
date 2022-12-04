@@ -9,12 +9,12 @@ services:
       - no-new-privileges:true
     networks:
       t2_proxy:
-        ipv4_address: 192.168.90.96
+        ipv4_address: 192.168.90.50
     ports:
       - "9010:8096"
       - "8920:8920"
       - "7359:7359/udp"
-      - "1900:1900/udp"
+    #  - "1900:1900/udp"
     devices:
       - /dev/dri:/dev/dri
     volumes:

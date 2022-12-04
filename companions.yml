@@ -54,5 +54,5 @@ services:
       LOG_LEVEL: debug
       SELF_UPDATE: "true"
       CLEANUP: "true"
-      IGNORE: traefik plex tdarr syncthing wireguard sonarr radarr pihole ombi
+      IGNORE: traefik plex tdarr syncthing wireguard sonarr radarr pihole ombi samba
       NOTIFIERS: "tgram://$TGRAM_BOT_TOKEN/$TGRAM_CHAT_ID/"

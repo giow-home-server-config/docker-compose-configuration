@@ -1,0 +1,79 @@
+version: "3.7"
+
+services:
+  # Ombi - Media Requests
+  ombi:
+    image: lscr.io/linuxserver/ombi:latest
+    container_name: ombi
+    restart: unless-stopped
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.94
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${USERDIR}/docker/ombi:/config
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.ombi-rtr.entrypoints=https"
+      - "traefik.http.routers.ombi-rtr.rule=HostHeader(`ombi.$DOMAINNAME`)"
+      - "traefik.http.routers.ombi-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.ombi-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.ombi-rtr.service=ombi-svc"
+      - "traefik.http.services.ombi-svc.loadbalancer.server.port=3579"
+
+  doplarr:
+    container_name: doplarr
+    image: "ghcr.io/kiranshila/doplarr:latest"
+    networks:
+      t2_proxy:
+    environment:
+      - SONARR__URL=http://192.168.90.91:8989
+      - RADARR__URL=http://192.168.90.92:7878
+      - SONARR__API=2e0e346008e74376a0dda3eeeecef2b6
+      - RADARR__API=984bd2f4b1bd415f8fc706e86b223810
+      - SONARR__QUALITY_PROFILE="Save Space"
+      - RADARR__QUALITY_PROFILE="Save Space"
+      - SONARR__SEASON_FOLDERS=true
+      # - OVERSEERR__URL=http://192.168.90.96:5055
+      # - OVERSEERR__API=${OVERSEER_API}
+      - DISCORD__TOKEN=${DISCORD__TOKEN}
+
+  ersatztv:
+    image: jasongdove/ersatztv
+    container_name: ersatztv
+    restart: unless-stopped
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.99
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TZ: $TZ
+    volumes:
+      # Config
+      - $USERDIR/docker/ersatztv:/config
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    ports:
+      - 8409:8409
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.ersatztv-rtr.entrypoints=https"
+      - "traefik.http.routers.ersatztv-rtr.rule=HostHeader(`ersatztv.$DOMAINNAME`)"
+      - "traefik.http.routers.ersatztv-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.ersatztv-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.ersatztv-rtr.service=ersatztv-svc"
+      - "traefik.http.services.ersatztv-svc.loadbalancer.server.port=8409"

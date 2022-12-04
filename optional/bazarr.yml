@@ -13,7 +13,8 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "0.7"
+          cpus: "2.5"
+          memory: 1024M
     environment:
       - PUID=$PUID
       - PGID=$PGID

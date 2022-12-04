@@ -13,10 +13,16 @@ services:
       - ${USERDIR}/docker/samba/samba.conf:/etc/samba/smb.conf
       - ${USERDIR}/docker/samba/start_server.sh:/start_server.sh
       # Disks
+      - ${USERDIR}/Media:/hdd-disk-0
+      - /mnt/hdd-sata-1/:/hdd-disk-1
+      - /mnt/hdd-sata-2/:/hdd-disk-2
+      - /mnt/hdd-sata-3/:/hdd-disk-3
+      - /mnt/hdd-sata-4/:/hdd-disk-4
       - /mnt/hdd-sata-4/nas/share:/share
       - /mnt/hdd-sata-4/nas/giow:/giow
       - /mnt/hdd-sata-4/syncthing:/syncthing
-      - /mnt/hdd-sata-4/:/hdd-disk-4
+      - /mnt/hdd-usb-1/:/hdd-usb-1
+      - /mnt/hdd-usb-2/:/hdd-usb-2
     environment:
       - USERID=${PUID}
       - GROUPID=${PGID}
