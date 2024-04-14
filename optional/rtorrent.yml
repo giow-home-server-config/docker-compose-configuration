@@ -1,0 +1,114 @@
+version: "3.7"
+
+services:
+  # Torrent Downloader - rTorrent BitTorrent client
+  rtorrent:
+    #image: binhex/arch-rtorrentvpn:rtorrent-ps-1.1.r54.ga787dd9-1-17
+    image: binhex/arch-rtorrentvpn
+    container_name: rtorrent
+    hostname: rtorrent
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "9004:9080/tcp" # LAN port
+      - "49164:49164"
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun
+    deploy:
+      resources:
+        limits:
+          memory: 3000M
+    environment:
+      - VPN_ENABLED=no
+      - VPN_USER=${VPN_USER}
+      - VPN_PASS=${VPN_PASS}
+      - VPN_PROV=${VPN_PROVIDER}
+      - VPN_OPTIONS=
+      - STRICT_PORT_FORWARD=yes
+      - ENABLE_WEBUI_AUTH=no
+      - ENABLE_RPC2=yes
+      - ENABLE_RPC2_AUTH=yes
+      - RPC2_USER=$RPC2_USERNAME
+      - RPC2_PASS=$RPC2_PASSWORD
+      - ENABLE_PRIVOXY=no
+      - ENABLE_AUTODL_IRSSI=no
+      - NAME_SERVERS=84.200.69.80,37.235.1.174,1.1.1.1,37.235.1.177,84.200.70.40,1.0.0.1
+      - UMASK=002
+      - DEBUG=true
+      - PHP_TZ=${TZ}
+      - PGID=${PGID}
+      - PUID=${PUID}
+    volumes:
+      # Config
+      - ${USERDIR}/docker/rtorrent-new:/config
+      - /etc/localtime:/etc/localtime:ro
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.90
+    labels:
+      - "traefik.enable=true"
+      ## Bypass OAUTH for RPC2 (it still has its own auth)
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.entrypoints=https"
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.rule=HostHeader(`torrent.$DOMAINNAME`) && PathPrefix(`/RPC2`)"
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.priority=100"
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.tls=true"
+      ## HTTP Routers
+      - "traefik.http.routers.rtorrentvpn-rtr.entrypoints=https"
+      - "traefik.http.routers.rtorrentvpn-rtr.rule=HostHeader(`torrent.$DOMAINNAME`)"
+      - "traefik.http.routers.rtorrentvpn-rtr.priority=99"
+      - "traefik.http.routers.rtorrentvpn-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.rtorrentvpn-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.rtorrentvpn-rtr.service=rtorrentvpn-svc"
+      - "traefik.http.routers.rtorrentvpn-rpc-bypass-rtr.service=rtorrentvpn-svc"
+      - "traefik.http.services.rtorrentvpn-svc.loadbalancer.server.port=9080"
+
+  flood:
+    image: jesec/flood:master-distroless
+    container_name: flood
+    restart: unless-stopped
+    user: "${PUID}:${PGID}"
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "9013:3001/tcp" # LAN port
+    command: --port 3001 --allowedpath /disks
+    deploy:
+      resources:
+        limits:
+          memory: 1536M
+    environment:
+      - HOME=/config
+      - PGID=${PGID}
+      - PUID=${PUID}
+    volumes:
+      # Config
+      - ${USERDIR}/docker/flood:/config
+      - /etc/localtime:/etc/localtime:ro
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.101
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.flood-rtr.entrypoints=https"
+      - "traefik.http.routers.flood-rtr.rule=HostHeader(`flood.$DOMAINNAME`)"
+      - "traefik.http.routers.flood-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.flood-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.flood-rtr.service=flood-svc"
+      - "traefik.http.services.flood-svc.loadbalancer.server.port=3001"

@@ -1,0 +1,14 @@
+version: '3.7'
+
+services:
+  searcharr:
+    container_name: searcharr
+    image: toddrob/searcharr:latest
+    network_mode: host
+    volumes:
+      - ${USERDIR}/docker/searcharr/data:/app/data
+      - ${USERDIR}/docker/searcharr/logs:/app/logs
+      - ${USERDIR}/docker/searcharr/settings.py:/app/settings.py
+    environment:
+      - TZ=${TZ}
+    restart: unless-stopped
