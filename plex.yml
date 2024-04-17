@@ -87,7 +87,7 @@ services:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
       - "traefik.http.routers.sonarr-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.sonarr-rtr-bypass.rule=Headers(`X-Api-Key`, `$SONARR_API_KEY`) || Query(`apikey`, `$SONARR_API_KEY`)"
+      - "traefik.http.routers.sonarr-rtr-bypass.rule=Host(`sonarr.$DOMAINNAME`) && Headers(`X-Api-Key`, `$SONARR_API_KEY`) || Host(`sonarr.$DOMAINNAME`) && Query(`apikey`, `$SONARR_API_KEY`)"
       - "traefik.http.routers.sonarr-rtr-bypass.priority=100"
       - "traefik.http.routers.sonarr-rtr-bypass.tls=true"
       ## HTTP Routers Auth
@@ -138,7 +138,7 @@ services:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
       - "traefik.http.routers.radarr-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.radarr-rtr-bypass.rule=Headers(`X-Api-Key`, `$RADARR_API_KEY`) || Query(`apikey`, `$RADARR_API_KEY`)"
+      - "traefik.http.routers.radarr-rtr-bypass.rule=Host(`radarr.$DOMAINNAME`) && Headers(`X-Api-Key`, `$RADARR_API_KEY`) || Host(`radarr.$DOMAINNAME`) && Query(`apikey`, `$RADARR_API_KEY`)"
       - "traefik.http.routers.radarr-rtr-bypass.priority=100"
       - "traefik.http.routers.radarr-rtr-bypass.tls=true"
       ## HTTP Routers Auth
@@ -187,7 +187,7 @@ services:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
       - "traefik.http.routers.jackett-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.jackett-rtr-bypass.rule=Headers(`X-Api-Key`, `$JACKETT_API_KEY`) || Query(`apikey`, `$JACKETT_API_KEY`)"
+      - "traefik.http.routers.jackett-rtr-bypass.rule=Host(`jackett.$DOMAINNAME`) && Headers(`X-Api-Key`, `$JACKETT_API_KEY`) || Host(`jackett.$DOMAINNAME`) && Query(`apikey`, `$JACKETT_API_KEY`)"
       - "traefik.http.routers.jackett-rtr-bypass.priority=100"
       - "traefik.http.routers.jackett-rtr-bypass.tls=true"
       ## HTTP Routers
@@ -273,22 +273,23 @@ services:
     labels:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
-      - "traefik.http.routers.qbit-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.qbit-rtr-bypass.rule=Headers(`HEADER_BYPASS`, `$HEADER_BYPASS`)"
-      - "traefik.http.routers.qbit-rtr-bypass.priority=100"
-      - "traefik.http.routers.qbit-rtr-bypass.tls=true"
+      - "traefik.http.routers.qbittorrent-rtr-bypass.entrypoints=https"
+      - "traefik.http.routers.qbittorrent-rtr-bypass.rule=Host(`torrent.$DOMAINNAME`) && Headers(`Nzb360-Header`, `$NZB360_HEADER`)"
+      - "traefik.http.routers.qbittorrent-rtr-bypass.priority=100"
+      - "traefik.http.routers.qbittorrent-rtr-bypass.tls=true"
       ## HTTP Routers
-      - "traefik.http.routers.qbit-rtr.entrypoints=https"
-      - "traefik.http.routers.qbit-rtr.rule=HostHeader(`torrent.$DOMAINNAME`)"
-      - "traefik.http.routers.qbit-rtr.tls=true"
+      - "traefik.http.routers.qbittorrent-rtr.entrypoints=https"
+      - "traefik.http.routers.qbittorrent-rtr.rule=HostHeader(`torrent.$DOMAINNAME`)"
+      - "traefik.http.routers.qbittorrent-rtr.tls=true"
+      - "traefik.http.routers.qbittorrent-rtr.priority=99"
       ## Middlewares
-      - "traefik.http.routers.qbit-rtr.middlewares=chain-oauth@file"
+      - "traefik.http.routers.qbittorrent-rtr.middlewares=chain-oauth@file"
       ## Middlewares - Bypass
-      - "traefik.http.routers.qbit-rtr-bypass.middlewares=chain-no-auth@file"
+      - "traefik.http.routers.qbittorrent-rtr-bypass.middlewares=chain-no-auth@file"
       ## HTTP Services
-      - "traefik.http.routers.qbit-rtr.service=qbit-svc"
-      - "traefik.http.routers.sonarr-rtr-bypass.service=qbit-svc"
-      - "traefik.http.services.qbit-svc.loadbalancer.server.port=8080"
+      - "traefik.http.routers.qbittorrent-rtr.service=qbittorrent-svc"
+      - "traefik.http.routers.qbittorrent-rtr-bypass.service=qbittorrent-svc"
+      - "traefik.http.services.qbittorrent-svc.loadbalancer.server.port=8080"
 
 
   # Overseerr - Media Requests
@@ -339,12 +340,21 @@ services:
       - 9011:8181
     labels:
       - "traefik.enable=true"
+      ## HTTP Routers Auth Bypass for NZB360
+      - "traefik.http.routers.tautulli-rtr-bypass.entrypoints=https"
+      - "traefik.http.routers.tautulli-rtr-bypass.rule=Host(`tautulli.$DOMAINNAME`) && Headers(`Nzb360-Header`, `$NZB360_HEADER`)"
+      - "traefik.http.routers.tautulli-rtr-bypass.priority=100"
+      - "traefik.http.routers.tautulli-rtr-bypass.tls=true"
       ## HTTP Routers
       - "traefik.http.routers.tautulli-rtr.entrypoints=https"
       - "traefik.http.routers.tautulli-rtr.rule=HostHeader(`tautulli.$DOMAINNAME`)"
       - "traefik.http.routers.tautulli-rtr.tls=true"
+      - "traefik.http.routers.tautulli-rtr.priority=99"
       ## Middlewares
       - "traefik.http.routers.tautulli-rtr.middlewares=chain-oauth@file"
+      ## Middlewares - Bypass
+      - "traefik.http.routers.tautulli-rtr-bypass.middlewares=chain-no-auth@file"
       ## HTTP Services
       - "traefik.http.routers.tautulli-rtr.service=tautulli-svc"
+      - "traefik.http.routers.tautulli-rtr-bypass.service=tautulli-svc"
       - "traefik.http.services.tautulli-svc.loadbalancer.server.port=8181"
