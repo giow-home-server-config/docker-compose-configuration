@@ -144,7 +144,7 @@ Web UI: <https://casa.giow.dev>.
 | Traefik Forward Auth | `local_forwardauth` | `oauth.giow.dev`, porta 4181. Usuário `forwardauth`. |
 | CrowdSec | `local_crowdsec` | IPS + LAPI (`127.0.0.1:8080`) do bouncer do Traefik de lá. Daemon com usuário `crowdsec`. |
 | Frigate | `ccab4aaf_frigate` | NVR. Rota `frigate.giow.dev` → `172.30.33.1:5000` |
-| Jackett NAS | `db21ed7f_jackett_nas` | **:9117**. Config em `/config/addons_config/Jackett/`. Roda como root (ver Problemas conhecidos). |
+| Jackett NAS | `db21ed7f_jackett_nas` | **:9117**. Config em `/share/jackett/Jackett/`. Roda como uid 1000 (ver seção do Jackett). |
 | FlareSolverr | `db21ed7f_flaresolverr` | **:8191**. Dentro da rede do HA: `http://db21ed7f-flaresolverr:8191` |
 | Zigbee2MQTT, Changedetection.io (:5000), Studio Code Server, File editor, Tailscale, Advanced SSH | | |
 | Vaultwarden | `a0d7b954_bitwarden` | ⚠️ em estado `error` |
@@ -163,6 +163,11 @@ Hardware: 8 GB de RAM (o Frigate usa cerca de 2,6 GB) e 458 GB de disco.
 
 - **Sonarr** (7 indexadores) e **Radarr** (5) apontam para `http://192.168.1.232:9117/api/v2.0/indexers/<id>/results/torznab/`.
 - O Jackett usa o FlareSolverr do próprio mini-pc-bd (`http://db21ed7f-flaresolverr:8191`).
+- **Roda sem root** (PUID/PGID 1000) com a config em **`/share/jackett/Jackett`** (pasta 700, dono 1000). O add-on
+  guarda a config em `$XDG_CONFIG_HOME/Jackett`, por padrão `/config/addons_config`, dentro da configuração do HA.
+  Ali o uid 1000 não entra, porque `/homeassistant` é `700 root`. A opção `env_vars` do add-on sobrescreve com
+  `XDG_CONFIG_HOME=/share/jackett`. A pasta antiga `/config/addons_config/Jackett` ficou parada como rollback
+  (voltar: PUID/PGID 0 e `env_vars: []`). Atenção: `/share` entra no backup completo do HA, não no parcial do add-on.
 - A config veio inteira do mk1 (`ServerConfig.json`, `Indexers/`, `DataProtection/`), então a API key e a senha
   admin são as mesmas de antes (`JACKETT_API_KEY` no `.env` do mk1).
 - `jackett.giow.dev` continua entrando pelo **Traefik do mk1** (`rules/jackett.toml`), que repassa para
@@ -216,13 +221,8 @@ de falha reais (VPS, internet, energia) são compartilhados, e seria preciso man
 
 ## Problemas conhecidos
 
-- **Indexadores que já estavam quebrados antes da migração:** AmigosShare (login falha; está no Sonarr e no Radarr),
-  MyAnonamouse (sessão expirada), animez, therarbg, thegeeks. **AnimeTorrents** está no Sonarr, mas não existe
+- **Indexadores que já estavam quebrados antes da migração:** MyAnonamouse (sessão expirada), animez, therarbg, thegeeks. **AnimeTorrents** está no Sonarr, mas não existe
   no Jackett. O Nyaa do Sonarr tem aviso de seed ratio = 0.
-- **O Jackett NAS roda como root** (`PUID/PGID = 0`). Com PUID 1000 ele não sobe: a config fica em
-  `/config/addons_config/Jackett`, e a raiz da configuração do HA (`/homeassistant`) é `700 root`. Para rodar sem
-  root seria preciso liberar a passagem (`chmod o+x /homeassistant`), o que deixa o `secrets.yaml` (644) legível
-  para qualquer uid não-root dos containers que montam a config do HA. Decisão pendente.
 - `~/scripts/cookie_updater/main.py` ainda aponta para o Jackett antigo (`192.168.1.88:9003`). O script não está no cron.
 - Os `*-bh.giow.dev` batem no Traefik do mk1 e recebem 404 (cerca de 4.800 requisições desde 14/09).
   Provavelmente falta registrar esses domínios no frpc do servidor deles.
@@ -237,4 +237,4 @@ de falha reais (VPS, internet, energia) são compartilhados, e seria preciso man
 |---|---|
 | 2026-09-11 | Login "Not authorized" em todo o OAuth: o forward-auth do mini-pc-bd era de 2020 e incompatível com o do mk1. As duas instâncias foram para o v2.3.0. Watchtower desativado para o `oauth`. |
 | 2026-10-03 | Jackett e FlareSolverr migrados do mk1 para os add-ons do mini-pc-bd (atualizados para 0.24.2756 / 3.5.2). Rota `jackett.giow.dev` refeita como file rule. Chave SSH do mk1 autorizada no mini-pc-bd. Este documento criado. |
-| 2026-10-03 | Tudo versionado em `docker-compose-configuration` (o repositório estava parado desde 04/2024), com gitleaks no pre-commit. Add-ons do mini-pc-bd dentro do repositório, publicados pelo mk1 (`deploy.sh`). Traefik 2.0.0: regras do repositório, segredos via `secrets`, porta 8443. Os 4 add-ons locais sem root (traefik 2.0.0, frpc 1.3.0, forwardauth 1.1.0, crowdsec 1.2.1). |
+| 2026-10-03 | Tudo versionado em `docker-compose-configuration` (o repositório estava parado desde 04/2024), com gitleaks no pre-commit. Add-ons do mini-pc-bd dentro do repositório, publicados pelo mk1 (`deploy.sh`). Traefik 2.0.0: regras do repositório, segredos via `secrets`, porta 8443. Os 4 add-ons locais sem root (traefik 2.0.0, frpc 1.3.0, forwardauth 1.1.0, crowdsec 1.2.1). Jackett NAS sem root (uid 1000, config em `/share/jackett`); some o aviso "running with root privileges". |
