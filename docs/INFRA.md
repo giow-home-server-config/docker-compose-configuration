@@ -72,7 +72,7 @@ navegador ──► Cloudflare (DNS proxied: todo *.giow.dev é CNAME → giow.d
      │ frpc do mini-pc-bd:                      │ (frpc do mk1, customDomains = *.giow.dev)
      │ casa / frigate / oauth .giow.dev         │
      ▼                                          ▼
- Traefik do mini-pc-bd (:443)              Traefik do mk1 (:443)
+ Traefik do mini-pc-bd (:8443)             Traefik do mk1 (:443)
 ```
 
 - O frps dá prioridade ao domínio exato sobre o wildcard. Por isso `casa`, `frigate` e `oauth` vão direto para
@@ -82,7 +82,7 @@ navegador ──► Cloudflare (DNS proxied: todo *.giow.dev é CNAME → giow.d
   Confirmado nos logs: `casa.giow.dev` foi atendido pelo `hass.toml` do mk1 em 2026-08-25 (deu 502 porque o HA
   também estava reiniciando) e em 2026-09-10 (200). Essa reserva só existe enquanto o mk1 anunciar `*.giow.dev`.
 - Para mover um domínio público para o mini-pc-bd, é preciso **adicioná-lo nos dois lugares de lá**:
-  em `custom_domains` do add-on frpc e em `routes` do add-on Traefik.
+  em `custom_domains` do add-on frpc e numa regra em `mini-pc-bd/traefik/rules/` (no repositório).
 
 > Inventário completo de containers, scripts e serviços, com consumo e veredito de onde cada um deve ficar:
 > **[CATALOGO.md](CATALOGO.md)**.
@@ -139,18 +139,21 @@ Web UI: <https://casa.giow.dev>.
 
 | Add-on | Slug | O que faz |
 |---|---|---|
-| Traefik | `local_traefik` | Proxy de `casa`/`frigate`/`oauth`. As rotas ficam nas **opções do add-on** (`routes`: domain, backend, auth). Só suporta "com login" ou "sem login". |
-| frpc | `local_frpc` | `custom_domains`: casa, frigate, oauth `.giow.dev` → localhost:443 |
-| Traefik Forward Auth | `local_forwardauth` | `oauth.giow.dev`, porta 4181 |
-| CrowdSec | `local_crowdsec` | Bouncer do Traefik de lá |
+| Traefik | `local_traefik` | Proxy da borda, **:8443**, usuário `traefik` (sem root). Lê as regras direto do repositório (`mini-pc-bd/traefik/rules/`, recarrega sozinho). Segredos na opção `secrets`, usados nas regras com `{{ env "NOME" }}`. Ver `mini-pc-bd/traefik/README.md`. |
+| frpc | `local_frpc` | `custom_domains`: casa, frigate, oauth `.giow.dev` → `127.0.0.1:8443`. Usuário `frpc`. |
+| Traefik Forward Auth | `local_forwardauth` | `oauth.giow.dev`, porta 4181. Usuário `forwardauth`. |
+| CrowdSec | `local_crowdsec` | IPS + LAPI (`127.0.0.1:8080`) do bouncer do Traefik de lá. Daemon com usuário `crowdsec`. |
 | Frigate | `ccab4aaf_frigate` | NVR. Rota `frigate.giow.dev` → `172.30.33.1:5000` |
-| Jackett NAS | `db21ed7f_jackett_nas` | **:9117**. Config em `/config/addons_config/Jackett/` |
+| Jackett NAS | `db21ed7f_jackett_nas` | **:9117**. Config em `/config/addons_config/Jackett/`. Roda como root (ver Problemas conhecidos). |
 | FlareSolverr | `db21ed7f_flaresolverr` | **:8191**. Dentro da rede do HA: `http://db21ed7f-flaresolverr:8191` |
 | Zigbee2MQTT, Changedetection.io (:5000), Studio Code Server, File editor, Tailscale, Advanced SSH | | |
 | Vaultwarden | `a0d7b954_bitwarden` | ⚠️ em estado `error` |
 
-O código dos add-ons locais (`local_*`) fica em `/addons/<nome>/` (`Dockerfile`, `config.yaml`, `run.sh`).
-Depois de editar: `ha apps rebuild local_<nome>`.
+O código dos add-ons locais (`local_*`) está no repositório, em `mini-pc-bd/addons/<nome>/`, clonado em
+`/addons/homelab`. Edite e commite no mk1 e publique com `mini-pc-bd/deploy.sh <nome>`.
+
+Os 4 add-ons locais rodam **sem root**: o `run.sh` prepara os arquivos como root e passa o processo para um
+usuário próprio com `su-exec` (traefik 10010, frpc 10011, forwardauth 10012, crowdsec 10013).
 
 Hardware: 8 GB de RAM (o Frigate usa cerca de 2,6 GB) e 458 GB de disco.
 
@@ -197,14 +200,14 @@ Failover ativo-ativo (os dois frpc num `loadBalancer.group` do frp) foi avaliado
 moram numa máquina só cada um, então o segundo Traefik não teria para onde mandar o tráfego. Os pontos únicos
 de falha reais (VPS, internet, energia) são compartilhados, e seria preciso manter paridade total o tempo todo.
 
-**Plano: borda única no mini-pc-bd** (status: proposto)
-1. Ampliar o add-on `local_traefik` para ler um diretório de regras (file provider em `/share/traefik/rules`)
-   e receber segredos (API keys) pelas opções do add-on. Assim ele fica com os mesmos recursos do Traefik do mk1.
-2. Recriar lá os middlewares do mk1 e as rotas dos serviços do mk1, apontando para `192.168.1.88:<porta>`
+**Plano: borda única no mini-pc-bd** (status: em andamento)
+1. ✅ (2026-10-03) O add-on `local_traefik` lê as regras do repositório e recebe segredos pela opção `secrets`.
+   Os middlewares do mk1 já estão lá (`secure-headers`, `chain-no-auth`, `chain-oauth`).
+2. Recriar lá as rotas dos serviços do mk1, apontando para `192.168.1.88:<porta>`
    (todos já publicam porta no host: 9001, 9002, 9011, 9012, 9015, 9019, 9020, 32400).
 3. Virar **um domínio por vez**, colocando o domínio em `custom_domains` do frpc do mini-pc-bd. O domínio
    exato vence o wildcard do mk1. Para desfazer, basta tirar o domínio da lista.
-4. Estado final, **em aberto**:
+4. Estado final: **(b) primário + reserva** (decidido em 2026-10-03). A alternativa descartada foi:
    - (a) o frpc do mini-pc-bd assume `*.giow.dev`, e no mk1 saem frpc, traefik, oauth, crowdsec, cf-companion e
      socket-proxy; ou
    - (b) **primário + reserva**: o mini-pc-bd anuncia a lista explícita de domínios e o mk1 continua anunciando
@@ -216,7 +219,10 @@ de falha reais (VPS, internet, energia) são compartilhados, e seria preciso man
 - **Indexadores que já estavam quebrados antes da migração:** AmigosShare (login falha; está no Sonarr e no Radarr),
   MyAnonamouse (sessão expirada), animez, therarbg, thegeeks. **AnimeTorrents** está no Sonarr, mas não existe
   no Jackett. O Nyaa do Sonarr tem aviso de seed ratio = 0.
-- O Jackett NAS roda como root (`PUID/PGID = 0` nas opções do add-on).
+- **O Jackett NAS roda como root** (`PUID/PGID = 0`). Com PUID 1000 ele não sobe: a config fica em
+  `/config/addons_config/Jackett`, e a raiz da configuração do HA (`/homeassistant`) é `700 root`. Para rodar sem
+  root seria preciso liberar a passagem (`chmod o+x /homeassistant`), o que deixa o `secrets.yaml` (644) legível
+  para qualquer uid não-root dos containers que montam a config do HA. Decisão pendente.
 - `~/scripts/cookie_updater/main.py` ainda aponta para o Jackett antigo (`192.168.1.88:9003`). O script não está no cron.
 - Os `*-bh.giow.dev` batem no Traefik do mk1 e recebem 404 (cerca de 4.800 requisições desde 14/09).
   Provavelmente falta registrar esses domínios no frpc do servidor deles.
@@ -231,3 +237,4 @@ de falha reais (VPS, internet, energia) são compartilhados, e seria preciso man
 |---|---|
 | 2026-09-11 | Login "Not authorized" em todo o OAuth: o forward-auth do mini-pc-bd era de 2020 e incompatível com o do mk1. As duas instâncias foram para o v2.3.0. Watchtower desativado para o `oauth`. |
 | 2026-10-03 | Jackett e FlareSolverr migrados do mk1 para os add-ons do mini-pc-bd (atualizados para 0.24.2756 / 3.5.2). Rota `jackett.giow.dev` refeita como file rule. Chave SSH do mk1 autorizada no mini-pc-bd. Este documento criado. |
+| 2026-10-03 | Tudo versionado em `docker-compose-configuration` (o repositório estava parado desde 04/2024), com gitleaks no pre-commit. Add-ons do mini-pc-bd dentro do repositório, publicados pelo mk1 (`deploy.sh`). Traefik 2.0.0: regras do repositório, segredos via `secrets`, porta 8443. Os 4 add-ons locais sem root (traefik 2.0.0, frpc 1.3.0, forwardauth 1.1.0, crowdsec 1.2.1). |

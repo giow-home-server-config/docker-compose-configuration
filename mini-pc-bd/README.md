@@ -32,10 +32,13 @@ O SSH roda no add-on Advanced SSH em *protection mode*, então `docker` não fun
 
 | Pasta | Slug | Função |
 |---|---|---|
-| `addons/traefik` | `local_traefik` | Proxy reverso da borda (Let's Encrypt via DNS-01 Cloudflare) |
-| `addons/frpc` | `local_frpc` | Cliente frp: anuncia os domínios no VPS e entrega no Traefik local |
+| `addons/traefik` | `local_traefik` | Proxy reverso da borda, `:8443` (Let's Encrypt via DNS-01 Cloudflare). Regras em [`traefik/rules/`](traefik/README.md) |
+| `addons/frpc` | `local_frpc` | Cliente frp: anuncia os domínios no VPS e entrega em `127.0.0.1:8443` |
 | `addons/forwardauth` | `local_forwardauth` | Login Google (`oauth.giow.dev`), v2.3.0 conferido por checksum |
 | `addons/crowdsec` | `local_crowdsec` | IPS que lê o access log do Traefik e alimenta o bouncer |
+
+Os quatro rodam **sem root**: o `run.sh` prepara os arquivos como root e entrega o processo a um usuário próprio
+(`su-exec`): traefik 10010, frpc 10011, forwardauth 10012, crowdsec 10013.
 
 Segredos (token do Cloudflare, chave da LAPI do CrowdSec, credenciais OAuth, token do frp, API keys) ficam **nas
 opções do add-on**, nunca nos arquivos deste diretório.
