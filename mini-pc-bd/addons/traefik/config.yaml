@@ -1,5 +1,5 @@
 name: Traefik
-version: "1.5.0"
+version: "2.0.0"
 slug: traefik
 description: Reverse proxy com TLS automatico (Let's Encrypt via DNS-01 Cloudflare)
 arch:
@@ -7,64 +7,48 @@ arch:
 init: false
 startup: services
 boot: auto
-# Precisa da rede do host para (a) bindar :443 e (b) o frpc alcancar
-# 127.0.0.1:443 sem depender de DNS interno do supervisor.
+# Rede do host para o frpc (tambem host_network) alcancar 127.0.0.1:<listen_port>
+# sem depender de DNS interno do supervisor.
 host_network: true
 map:
+  # /config: acme.json (certificados).
   - type: app_config
     read_only: false
   # /share e onde fica o access log, para o add-on do crowdsec conseguir ler.
   - type: share
     read_only: false
+  # As regras (routers, services, middlewares) vem do repositorio clonado em
+  # /addons/homelab. Somente leitura: quem muda regra e o git, nao o traefik.
+  - type: addons
+    read_only: true
 options:
   acme_email: giofmartinelli@gmail.com
   cf_dns_api_token: ""
   log_level: INFO
-  forward_auth_address: http://127.0.0.1:4181
+  # Porta alta: o traefik roda sem root e nao pode abrir porta < 1024. O frpc
+  # entrega aqui (opcao local_port dele).
+  listen_port: 8443
   # O frpc entrega em 127.0.0.1, entao e ELE que precisa ser confiavel para o
   # traefik preservar o X-Forwarded-For que a cloudflare mandou. Sem isso o
   # traefik descarta o header e todo mundo vira 127.0.0.1 la no HA.
   trusted_forward_ips: 127.0.0.1/32
   access_log: /share/traefik/access.log
   access_log_max_bytes: 104857600
-  rate_limit_average: 100
-  rate_limit_burst: 50
-  crowdsec_enabled: true
-  crowdsec_lapi_host: 127.0.0.1:8080
-  crowdsec_lapi_key: ""
-  routes:
-    # auth=false: o HA tem login proprio e o app companion quebra atras do oauth.
-    - domain: casa.giow.dev
-      backend: http://127.0.0.1:8123
-      auth: false
-      insecure_skip_verify: false
-    # 172.30.33.1 e o IP do add-on do frigate na rede hassio. Porta 5000 e a nao
-    # autenticada - quem protege e o forward-auth, igual era no mk1.
-    - domain: frigate.giow.dev
-      backend: http://172.30.33.1:5000
-      auth: true
-      insecure_skip_verify: false
-    # O proprio auth host. Precisa do middleware: o forward-auth reconhece o
-    # callback em /_oauth e trata internamente. Mesma config do mk1.
-    - domain: oauth.giow.dev
-      backend: http://127.0.0.1:4181
-      auth: true
-      insecure_skip_verify: false
+  rules_dir: /addons/homelab/mini-pc-bd/traefik/rules
+  # Segredos usados pelas regras via {{ env "NOME" }} (API keys, chave do
+  # crowdsec). Ficam so aqui, nunca no repositorio.
+  secrets: []
 schema:
   acme_email: email
   cf_dns_api_token: password
   log_level: list(DEBUG|INFO|WARN|ERROR)
-  forward_auth_address: url
+  listen_port: port
   trusted_forward_ips: str
   access_log: str
   access_log_max_bytes: int
-  rate_limit_average: int
-  rate_limit_burst: int
-  crowdsec_enabled: bool
-  crowdsec_lapi_host: str
-  crowdsec_lapi_key: password
-  routes:
-    - domain: str
-      backend: url
-      auth: bool?
-      insecure_skip_verify: bool?
+  rules_dir: str
+  secrets:
+    - name: match(^[A-Z][A-Z0-9_]*$)
+      value: password
+  # So para teste: aponta o ACME para outro CA (ex.: staging do Let's Encrypt).
+  acme_ca_server: url?

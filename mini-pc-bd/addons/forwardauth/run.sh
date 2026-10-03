@@ -30,6 +30,7 @@ export LOG_LEVEL="$(opt log_level)"
 export LOG_FORMAT=text
 export INSECURE_COOKIE=false
 
-echo "[INFO] forward-auth :${PORT} | auth_host=${AUTH_HOST} cookie_domain=${COOKIE_DOMAIN} whitelist=$(echo "${WHITELIST}" | tr ',' '\n' | wc -l) emails"
+echo "[INFO] forward-auth :${PORT} como 'forwardauth' | auth_host=${AUTH_HOST} cookie_domain=${COOKIE_DOMAIN} whitelist=$(echo "${WHITELIST}" | tr ',' '\n' | wc -l) emails"
 
-exec traefik-forward-auth
+# So variaveis de ambiente, nenhum arquivo: basta trocar de usuario.
+exec su-exec forwardauth traefik-forward-auth

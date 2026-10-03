@@ -35,6 +35,14 @@ done
 
 DOMAINS="$(jq -c '.custom_domains' "${OPTS}")"
 CONFIG=/data/frpc.toml
+RUN_AS=frpc
+
+# O client.key em /share/frp e 600 de outro dono e o /share e montado so para
+# leitura: copia os certificados para /data, com dono do usuario do frpc.
+CERTS=/data/certs
+mkdir -p "${CERTS}"
+cp "${CERT_DIR}/ca.crt" "${CERT_DIR}/client.crt" "${CERT_DIR}/client.key" "${CERTS}/"
+chmod 700 "${CERTS}"; chmod 600 "${CERTS}"/*
 
 # customDomains com os dominios EXATOS: no frps, match exato vence o curinga
 # *.giow.dev registrado pelo mk1. Parar este add-on devolve os dominios ao mk1.
@@ -46,9 +54,9 @@ auth.method = "token"
 auth.token = "${TOKEN}"
 
 transport.tls.enable = true
-transport.tls.certFile = "${CERT_DIR}/client.crt"
-transport.tls.keyFile = "${CERT_DIR}/client.key"
-transport.tls.trustedCaFile = "${CERT_DIR}/ca.crt"
+transport.tls.certFile = "${CERTS}/client.crt"
+transport.tls.keyFile = "${CERTS}/client.key"
+transport.tls.trustedCaFile = "${CERTS}/ca.crt"
 
 log.level = "${LOG_LEVEL}"
 
@@ -61,7 +69,8 @@ customDomains = ${DOMAINS}
 EOF
 
 chmod 600 "${CONFIG}"
+chown -R "${RUN_AS}:${RUN_AS}" "${CONFIG}" "${CERTS}"
 
-echo "[INFO] frpc ${SERVER_ADDR}:${SERVER_PORT} | ${DOMAINS} -> 127.0.0.1:${LOCAL_PORT}"
+echo "[INFO] frpc ${SERVER_ADDR}:${SERVER_PORT} como '${RUN_AS}' | ${DOMAINS} -> 127.0.0.1:${LOCAL_PORT}"
 
-exec frpc -c "${CONFIG}"
+exec su-exec "${RUN_AS}" frpc -c "${CONFIG}"

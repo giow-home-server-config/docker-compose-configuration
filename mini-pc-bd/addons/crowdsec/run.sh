@@ -17,6 +17,7 @@ UNBAN_IPS="$(opt unban_ips)"
 BAN_IPS="$(opt ban_ips)"
 BAN_DURATION="$(opt ban_duration)"
 [ -n "${BAN_DURATION}" ] || BAN_DURATION=4h
+RUN_AS=crowdsec
 
 if [ -z "${BOUNCER_KEY}" ]; then
     echo "[FATAL] bouncer_key vazia - sem ela o traefik nao consegue consultar a LAPI." >&2
@@ -112,18 +113,38 @@ echo "[INFO] crowdsec: lendo ${ACCESS_LOG} | LAPI 127.0.0.1:${LAPI_PORT} | bounc
 if [ -n "${UNBAN_IPS}${BAN_IPS}" ]; then
     (
         for _ in $(seq 1 90); do
-            cscli lapi status >/dev/null 2>&1 && break
+            su-exec "${RUN_AS}" cscli lapi status >/dev/null 2>&1 && break
             sleep 2
         done
         for ip in ${UNBAN_IPS}; do
-            cscli decisions delete --ip "${ip}" >/dev/null 2>&1 \
+            su-exec "${RUN_AS}" cscli decisions delete --ip "${ip}" >/dev/null 2>&1 \
                 && echo "[INFO] unban aplicado: ${ip}" || echo "[WARN] unban falhou: ${ip}" >&2
         done
         for ip in ${BAN_IPS}; do
-            cscli decisions add --ip "${ip}" --duration "${BAN_DURATION}" --reason "manual via add-on" >/dev/null 2>&1 \
+            su-exec "${RUN_AS}" cscli decisions add --ip "${ip}" --duration "${BAN_DURATION}" --reason "manual via add-on" >/dev/null 2>&1 \
                 && echo "[INFO] ban aplicado: ${ip} (${BAN_DURATION})" || echo "[WARN] ban falhou: ${ip}" >&2
         done
     ) &
 fi
 
-exec /bin/bash /docker_start.sh
+# O entrypoint oficial faz o setup como root (hub, registro do bouncer, banco) e
+# termina com `exec crowdsec $ARGS`. Roda uma copia em que so esse ultimo passo
+# muda: os arquivos passam a ser do usuario crowdsec e o processo sobe com ele.
+# Os cscli de ban/unban acima tambem rodam como esse usuario, para nunca criar
+# arquivo do banco (sqlite WAL) com dono root.
+START=/tmp/docker_start.sh
+awk -v u="${RUN_AS}" '
+    $0 == "exec crowdsec $ARGS" {
+        print "chown -R " u ":" u " /data/crowdsec-data /etc/crowdsec"
+        print "exec su-exec " u " crowdsec $ARGS"
+        found = 1; next
+    }
+    { print }
+    END { if (!found) exit 1 }
+' /docker_start.sh > "${START}" || {
+    echo "[FATAL] nao achei 'exec crowdsec \$ARGS' no /docker_start.sh da imagem - revisar o run.sh." >&2
+    exit 1
+}
+
+echo "[INFO] crowdsec vai rodar como '${RUN_AS}'"
+exec /bin/bash "${START}"

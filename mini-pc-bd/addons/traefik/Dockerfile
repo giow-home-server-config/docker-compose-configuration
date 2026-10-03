@@ -18,6 +18,10 @@ RUN apk add --no-cache curl tar \
     && rm -rf /tmp/p.tgz /tmp/crowdsec-bouncer-traefik-plugin-*
 
 FROM ${BUILD_FROM}
+# O run.sh prepara arquivos como root e entrega o processo ao usuario traefik.
+RUN apk add --no-cache su-exec \
+    && addgroup -S -g 10010 traefik \
+    && adduser -S -D -H -u 10010 -G traefik -s /sbin/nologin traefik
 COPY --from=upstream /usr/local/bin/traefik /usr/local/bin/traefik
 COPY --from=plugin /plugins-local /plugins-local
 COPY run.sh /run.sh

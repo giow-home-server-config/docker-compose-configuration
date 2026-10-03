@@ -10,56 +10,68 @@ opt() { jq -r --arg k "$1" '.[$k] // ""' "${OPTS}"; }
 ACME_EMAIL="$(opt acme_email)"
 CF_TOKEN="$(opt cf_dns_api_token)"
 LOG_LEVEL="$(opt log_level)"
-FWD_AUTH="$(opt forward_auth_address)"
+LISTEN_PORT="$(opt listen_port)"
 TRUSTED_IPS="$(opt trusted_forward_ips)"
 ACCESS_LOG="$(opt access_log)"
 ACCESS_LOG_MAX_BYTES="$(opt access_log_max_bytes)"
-RL_AVG="$(opt rate_limit_average)"
-RL_BURST="$(opt rate_limit_burst)"
-CS_ENABLED="$(jq -r '.crowdsec_enabled // false' "${OPTS}")"
-CS_HOST="$(opt crowdsec_lapi_host)"
-CS_KEY="$(opt crowdsec_lapi_key)"
+RULES_DIR="$(opt rules_dir)"
+ACME_CA_SERVER="$(opt acme_ca_server)"
 [ -n "${LOG_LEVEL}" ] || LOG_LEVEL=INFO
-[ -n "${FWD_AUTH}" ] || FWD_AUTH=http://127.0.0.1:4181
+[ -n "${LISTEN_PORT}" ] || LISTEN_PORT=8443
 [ -n "${TRUSTED_IPS}" ] || TRUSTED_IPS=127.0.0.1/32
-[ -n "${RL_AVG}" ] || RL_AVG=100
-[ -n "${RL_BURST}" ] || RL_BURST=50
 [ -n "${ACCESS_LOG_MAX_BYTES}" ] || ACCESS_LOG_MAX_BYTES=104857600
+
+RUN_AS=traefik
 
 if [ -z "${CF_TOKEN}" ]; then
     echo "[FATAL] cf_dns_api_token esta vazio - sem ele o ACME DNS-01 nao emite o certificado." >&2
     exit 1
 fi
 
-if [ "$(jq '.routes | length' "${OPTS}")" -eq 0 ]; then
-    echo "[FATAL] nenhuma rota configurada em 'routes'." >&2
+# As regras vem do repositorio (git). Sem elas o traefik subiria sem nenhuma
+# rota e responderia 404 para tudo - melhor falhar alto.
+if ! find "${RULES_DIR}" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.toml' \) 2>/dev/null | grep -q .; then
+    echo "[FATAL] nenhuma regra em ${RULES_DIR} (o clone /addons/homelab existe?)." >&2
     exit 1
 fi
 
-# So liga o bouncer se a chave existir. Sem essa guarda, um erro de config
-# deixaria o traefik falando com uma LAPI que recusa tudo.
-if [ "${CS_ENABLED}" = "true" ] && [ -z "${CS_KEY}" ]; then
-    echo "[FATAL] crowdsec_enabled=true mas crowdsec_lapi_key esta vazia." >&2
-    exit 1
-fi
+# Segredos -> variaveis de ambiente. As regras leem com {{ env "NOME" }} (Go
+# template do file provider), entao o valor nunca precisa estar no repositorio.
+while IFS=$'\t' read -r name value; do
+    [ -n "${name}" ] || continue
+    if ! [[ "${name}" =~ ^[A-Z][A-Z0-9_]*$ ]]; then
+        echo "[FATAL] nome de segredo invalido: '${name}'." >&2
+        exit 1
+    fi
+    export "${name}=${value}"
+done < <(jq -r '.secrets[]? | [.name, .value] | @tsv' "${OPTS}")
 
-PLUGIN_ARGS=()
-if [ "${CS_ENABLED}" = "true" ]; then
-    PLUGIN_ARGS=(--experimental.localPlugins.crowdsec.moduleName=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin)
+# Avisa (sem derrubar) quando uma regra usa um segredo que nao foi cadastrado.
+# Regra de bypass por API key deve se proteger com {{ if env "X" }} - ver
+# mini-pc-bd/traefik/README.md.
+MISSING=()
+for v in $(find "${RULES_DIR}" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.toml' \) \
+              -exec grep -hoE 'env "[A-Z][A-Z0-9_]*"' {} + | sed -E 's/env "(.*)"/\1/' | sort -u); do
+    [ -n "${!v:-}" ] || MISSING+=("${v}")
+done
+if [ "${#MISSING[@]}" -gt 0 ]; then
+    echo "[WARN] regras usam segredos sem valor em 'secrets': ${MISSING[*]}" >&2
 fi
 
 export CF_DNS_API_TOKEN="${CF_TOKEN}"
 
-DYNAMIC_DIR=/config/dynamic
+# Arquivos que o traefik escreve passam a ser do usuario dele.
 ACME_FILE=/config/acme.json
-
-mkdir -p "${DYNAMIC_DIR}"
+mkdir -p /config
 [ -f "${ACME_FILE}" ] || echo '{}' > "${ACME_FILE}"
 chmod 600 "${ACME_FILE}"
+chown -R "${RUN_AS}:${RUN_AS}" /config
 
 ACCESS_LOG_ARGS=()
 if [ -n "${ACCESS_LOG}" ]; then
     mkdir -p "$(dirname "${ACCESS_LOG}")"
+    touch "${ACCESS_LOG}"
+    chown "${RUN_AS}:${RUN_AS}" "$(dirname "${ACCESS_LOG}")" "${ACCESS_LOG}"
     ACCESS_LOG_ARGS=(
         --accessLog.filePath="${ACCESS_LOG}"
         --accessLog.format=json
@@ -82,57 +94,27 @@ else
     ACCESS_LOG_ARGS=(--accessLog=false)
 fi
 
-# Um router + um service por rota. O nome vem do dominio com os pontos trocados
-# por hifen, para ser um identificador valido no traefik.
-#
-# ipStrategy.depth=1 pega o IP mais a direita do X-Forwarded-For, que e o que a
-# cloudflare poe como cliente real. Sem isso o rateLimit agruparia todo mundo
-# como 127.0.0.1 e viraria um limite global, nao por IP.
-jq -r --arg fwd "${FWD_AUTH}" --argjson avg "${RL_AVG}" --argjson burst "${RL_BURST}" \
-      --arg csh "${CS_HOST}" --arg csk "${CS_KEY}" --argjson cs "${CS_ENABLED}" '
-  def id: gsub("[^a-zA-Z0-9]"; "-");
-  def chain: "        - ratelimit" + (if $cs then "\n        - crowdsec" else "" end);
-  "http:",
-  "  middlewares:",
-  (if $cs then
-    "    crowdsec:\n      plugin:\n        crowdsec:\n          enabled: \"true\"\n          crowdsecMode: live\n          crowdsecLapiScheme: http\n          crowdsecLapiHost: \"\($csh)\"\n          crowdsecLapiKey: \"\($csk)\"\n          forwardedHeadersTrustedIPs:\n            - 127.0.0.1/32\n          clientTrustedIPs:\n            - 192.168.1.0/24"
-   else empty end),
-  "    ratelimit:",
-  "      rateLimit:",
-  "        average: \($avg)",
-  "        burst: \($burst)",
-  "        sourceCriterion:",
-  "          ipStrategy:",
-  "            depth: 1",
-  "    oauth:",
-  "      forwardAuth:",
-  "        address: \"\($fwd)\"",
-  "        trustForwardHeader: true",
-  "        authResponseHeaders:",
-  "          - X-Forwarded-User",
-  "  serversTransports:",
-  "    insecure:",
-  "      insecureSkipVerify: true",
-  "  routers:",
-  (.routes[] | "    \(.domain|id):\n      rule: \"Host(`\(.domain)`)\"\n      entryPoints:\n        - https\n      service: \(.domain|id)\n      middlewares:\n\(chain)\(if .auth then "\n        - oauth" else "" end)\n      tls:\n        certResolver: cloudflare"),
-  "  services:",
-  (.routes[] | "    \(.domain|id):\n      loadBalancer:\n        passHostHeader: true\(if .insecure_skip_verify then "\n        serversTransport: insecure" else "" end)\n        servers:\n          - url: \"\(.backend)\"")
-' "${OPTS}" > "${DYNAMIC_DIR}/routes.yml"
+ACME_ARGS=()
+if [ -n "${ACME_CA_SERVER}" ]; then
+    ACME_ARGS=(--certificatesResolvers.cloudflare.acme.caServer="${ACME_CA_SERVER}")
+    echo "[WARN] ACME apontando para ${ACME_CA_SERVER} (nao e o Let's Encrypt de producao)." >&2
+fi
 
-jq -r '.routes[] | "[INFO] traefik: \(.domain) -> \(.backend)\(if .auth then " [oauth]" else "" end)"' "${OPTS}"
-echo "[INFO] trustedIPs=${TRUSTED_IPS} rateLimit=${RL_AVG}/s burst=${RL_BURST} accessLog=${ACCESS_LOG:-off} crowdsec=${CS_ENABLED}"
+echo "[INFO] traefik :${LISTEN_PORT} como '${RUN_AS}' | regras: ${RULES_DIR} ($(find "${RULES_DIR}" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' -o -name '*.toml' \) | wc -l) arquivos) | segredos: $(jq '.secrets | length' "${OPTS}")"
+echo "[INFO] trustedIPs=${TRUSTED_IPS} accessLog=${ACCESS_LOG:-off}"
 
-exec traefik \
-    --entryPoints.https.address=:443 \
+exec su-exec "${RUN_AS}" traefik \
+    --entryPoints.https.address=":${LISTEN_PORT}" \
     --entryPoints.https.forwardedHeaders.trustedIPs="${TRUSTED_IPS}" \
-    --providers.file.directory="${DYNAMIC_DIR}" \
+    --providers.file.directory="${RULES_DIR}" \
     --providers.file.watch=true \
     --certificatesResolvers.cloudflare.acme.email="${ACME_EMAIL}" \
     --certificatesResolvers.cloudflare.acme.storage="${ACME_FILE}" \
     --certificatesResolvers.cloudflare.acme.dnsChallenge.provider=cloudflare \
     --certificatesResolvers.cloudflare.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53 \
+    "${ACME_ARGS[@]}" \
+    --experimental.localPlugins.crowdsec.moduleName=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin \
     --log.level="${LOG_LEVEL}" \
     "${ACCESS_LOG_ARGS[@]}" \
-    "${PLUGIN_ARGS[@]}" \
     --api=false --ping=false \
     --global.checkNewVersion=false --global.sendAnonymousUsage=false

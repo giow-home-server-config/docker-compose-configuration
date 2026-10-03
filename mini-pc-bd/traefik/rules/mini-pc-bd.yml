@@ -1,0 +1,50 @@
+# Servicos que rodam no proprio mini-pc-bd.
+# Para um dominio chegar aqui pela internet ele tambem precisa estar em
+# custom_domains do add-on local_frpc.
+http:
+  routers:
+    # Sem oauth: o HA tem login proprio e o app companion quebra atras do oauth.
+    casa:
+      rule: "Host(`casa.giow.dev`)"
+      entryPoints: [https]
+      service: casa
+      middlewares: [chain-ha]
+      tls:
+        certResolver: cloudflare
+
+    frigate:
+      rule: "Host(`frigate.giow.dev`)"
+      entryPoints: [https]
+      service: frigate
+      middlewares: [chain-ha-oauth]
+      tls:
+        certResolver: cloudflare
+
+    # O proprio auth host. Precisa do middleware: o forward-auth reconhece o
+    # callback em /_oauth e trata internamente.
+    oauth:
+      rule: "Host(`oauth.giow.dev`)"
+      entryPoints: [https]
+      service: oauth
+      middlewares: [chain-ha-oauth]
+      tls:
+        certResolver: cloudflare
+
+  services:
+    casa:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:8123"
+    # 172.30.33.1 e o IP do add-on do Frigate na rede hassio; a porta 5000 e a
+    # nao autenticada, quem protege e o forward-auth.
+    frigate:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://172.30.33.1:5000"
+    oauth:
+      loadBalancer:
+        passHostHeader: true
+        servers:
+          - url: "http://127.0.0.1:4181"

@@ -5,7 +5,9 @@ FROM ${BUILD_FROM}
 # protocolo com o frps.
 ARG FRP_VERSION=0.62.0
 
-RUN apk add --no-cache curl tar \
+RUN apk add --no-cache curl tar su-exec \
+    && addgroup -S -g 10011 frpc \
+    && adduser -S -D -H -u 10011 -G frpc -s /sbin/nologin frpc \
     && curl -fsSL "https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/frp_${FRP_VERSION}_linux_amd64.tar.gz" -o /tmp/frp.tgz \
     && tar -xzf /tmp/frp.tgz -C /tmp \
     && mv "/tmp/frp_${FRP_VERSION}_linux_amd64/frpc" /usr/bin/frpc \

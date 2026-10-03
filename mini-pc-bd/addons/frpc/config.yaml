@@ -1,5 +1,5 @@
 name: frpc
-version: "1.2.0"
+version: "1.3.0"
 slug: frpc
 description: Cliente frp - registra os dominios no frps e entrega no traefik local
 arch:
@@ -7,7 +7,7 @@ arch:
 init: false
 startup: services
 boot: auto
-# Rede do host para alcancar 127.0.0.1:443 (add-on traefik, tambem host_network).
+# Rede do host para alcancar 127.0.0.1:<local_port> (add-on traefik, tambem host_network).
 host_network: true
 map:
   - type: app_config
@@ -23,7 +23,8 @@ options:
     - casa.giow.dev
     - frigate.giow.dev
     - oauth.giow.dev
-  local_port: 443
+  # Porta do traefik (listen_port dele). 8443: o traefik roda sem root.
+  local_port: 8443
   cert_dir: /share/frp
   log_level: info
 schema:

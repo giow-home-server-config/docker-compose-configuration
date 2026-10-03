@@ -1,5 +1,5 @@
 name: CrowdSec
-version: "1.1.0"
+version: "1.2.0"
 slug: crowdsec
 description: IDS/IPS - le o access log do traefik e alimenta o bouncer do proxy
 arch:

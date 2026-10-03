@@ -1,5 +1,5 @@
 name: Traefik Forward Auth
-version: "1.0.0"
+version: "1.1.0"
 slug: forwardauth
 description: Forward-auth com Google OAuth - mesmo SECRET/cookie do mk1, sessoes compartilhadas
 arch:

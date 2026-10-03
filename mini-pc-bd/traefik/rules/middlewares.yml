@@ -1,0 +1,78 @@
+# Middlewares compartilhados por todas as rotas do Traefik do mini-pc-bd.
+# Segredos entram por Go template (funcao env, ver ../README.md); o valor vem da opcao `secrets` do add-on
+# local_traefik, nunca deste repositorio. Ver ../README.md.
+http:
+  middlewares:
+    # --- blocos basicos ------------------------------------------------------
+    ratelimit:
+      rateLimit:
+        average: 100
+        burst: 50
+        # depth=1: IP mais a direita do X-Forwarded-For, que e o cliente real que
+        # a Cloudflare informou. Sem isso todo mundo seria 127.0.0.1 (o frpc) e o
+        # limite viraria global.
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+
+    crowdsec:
+      plugin:
+        crowdsec:
+          enabled: "true"
+          crowdsecMode: live
+          crowdsecLapiScheme: http
+          crowdsecLapiHost: "127.0.0.1:8080"
+          crowdsecLapiKey: '{{ env "CROWDSEC_LAPI_KEY" }}'
+          forwardedHeadersTrustedIPs:
+            - 127.0.0.1/32
+          clientTrustedIPs:
+            - 192.168.1.0/24
+
+    oauth:
+      forwardAuth:
+        address: "http://127.0.0.1:4181"
+        trustForwardHeader: true
+        authResponseHeaders:
+          - X-Forwarded-User
+
+    # Igual ao middlewares-secure-headers do mk1 (traefik2/rules/middlewares.toml),
+    # para os servicos do mk1 se comportarem igual quando passarem por aqui.
+    secure-headers:
+      headers:
+        accessControlAllowMethods: [GET, OPTIONS, PUT]
+        accessControlMaxAge: 100
+        hostsProxyHeaders: [X-Forwarded-Host]
+        stsSeconds: 63072000
+        stsIncludeSubdomains: true
+        stsPreload: true
+        forceSTSHeader: true
+        customFrameOptionsValue: "allow-from https:example.com"
+        contentTypeNosniff: true
+        browserXssFilter: true
+        referrerPolicy: same-origin
+        permissionsPolicy: "camera=(), geolocation=(), microphone=(), payment=(), usb=()"
+        customResponseHeaders:
+          X-Robots-Tag: "none,noarchive,nosnippet,notranslate,noimageindex,"
+          server: ""
+
+    # --- cadeias ---------------------------------------------------------------
+    # Servicos do proprio mini-pc-bd. Sem secure-headers de proposito: o
+    # permissionsPolicy bloquearia o microfone do Assist no HA.
+    chain-ha:
+      chain:
+        middlewares: [ratelimit, crowdsec]
+    chain-ha-oauth:
+      chain:
+        middlewares: [ratelimit, crowdsec, oauth]
+
+    # Mesmos nomes e composicao das cadeias do mk1 (middlewares-chain.toml).
+    chain-no-auth:
+      chain:
+        middlewares: [crowdsec, ratelimit, secure-headers]
+    chain-oauth:
+      chain:
+        middlewares: [crowdsec, ratelimit, secure-headers, oauth]
+
+  serversTransports:
+    insecure:
+      insecureSkipVerify: true

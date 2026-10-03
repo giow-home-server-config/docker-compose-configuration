@@ -10,7 +10,9 @@ FROM ${BUILD_FROM}
 ARG TFA_VERSION=v2.3.0
 ARG TFA_SHA256=539d733f1037b3ef5930880a5a1abca4081fcf72d6fabb810dc5b4a7adb81751
 
-RUN apk add --no-cache curl \
+RUN apk add --no-cache curl su-exec \
+    && addgroup -S -g 10012 forwardauth \
+    && adduser -S -D -H -u 10012 -G forwardauth -s /sbin/nologin forwardauth \
     && curl -fsSL -o /usr/bin/traefik-forward-auth \
        "https://github.com/thomseddon/traefik-forward-auth/releases/download/${TFA_VERSION}/traefik-forward-auth_amd64" \
     && echo "${TFA_SHA256}  /usr/bin/traefik-forward-auth" | sha256sum -c - \
