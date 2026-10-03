@@ -1,5 +1,3 @@
-version: "3.7"
-
 services:
   # DuckDns DNS Updater
   duckdns:
@@ -30,17 +28,19 @@ services:
     environment:
       - TIMEZONE=$TZ
       - TRAEFIK_VERSION=2
-      - CF_EMAIL=$CLOUDFLARE_EMAIL # Same as traefik
-      - CF_TOKEN=$CLOUDFLARE_API_KEY # Same as traefik
+      - CF_TOKEN=$CLOUDFLARE_API_TOKEN # scoped token; CF_EMAIL omitted on purpose - setting it makes this image use global-key mode
       - TARGET_DOMAIN=$DOMAINNAME
       - DOMAIN1=$DOMAINNAME
       - DOMAIN1_ZONE_ID=$CLOUDFLARE_ZONEID # Copy from Cloudflare Overview page
       - DOMAIN1_PROXIED=TRUE
 
-  # Ouroboros - Automatic Docker Container Updates
-  ouroboros:
-    image: pyouroboros/ouroboros:latest
-    container_name: ouroboros
+  # Watchtower - Automatic Docker Container Updates
+  # Replaced ouroboros, which upstream archived years ago while it held write
+  # access to the Docker socket and the authority to pull and restart anything
+  # here. Settings map one to one with the old ones; see watchtower-swap.log.
+  watchtower:
+    image: containrrr/watchtower:latest
+    container_name: watchtower
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -50,9 +50,35 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       TZ: $TZ
-      INTERVAL: 86400 # 24 hours
-      LOG_LEVEL: debug
-      SELF_UPDATE: "true"
-      CLEANUP: "true"
-      IGNORE: traefik plex tdarr syncthing wireguard sonarr radarr pihole ombi samba
-      NOTIFIERS: "tgram://$TGRAM_BOT_TOKEN/$TGRAM_CHAT_ID/"
+      # was INTERVAL: 86400
+      WATCHTOWER_POLL_INTERVAL: 86400
+      # was CLEANUP: "true"
+      WATCHTOWER_CLEANUP: "true"
+      # was IGNORE: the same list, same space-separated form. Traefik and plex
+      # stay out of it on purpose: both were upgraded by hand and neither should
+      # move again without someone watching.
+      WATCHTOWER_DISABLE_CONTAINERS: traefik plex crowdsec tdarr syncthing wireguard sonarr radarr pihole ombi samba
+      # was NOTIFIERS: tgram://... - shoutrrr spells the same thing differently
+      WATCHTOWER_NOTIFICATIONS: shoutrrr
+      WATCHTOWER_NOTIFICATION_URL: telegram://$TGRAM_BOT_TOKEN@telegram/?chats=$TGRAM_CHAT_ID
+      WATCHTOWER_NOTIFICATION_REPORT: "true"
+
+  # CrowdSec - IDS/IPS. Le o access log do traefik e serve as decisoes para o
+  # bouncer (plugin dentro do proprio traefik, via LAPI em crowdsec:8080).
+  crowdsec:
+    image: crowdsecurity/crowdsec:v1.7.8
+    container_name: crowdsec
+    restart: unless-stopped
+    networks:
+      - t2_proxy
+    environment:
+      - TZ=$TZ
+      - GID=$PGID
+      - COLLECTIONS=crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve
+      - BOUNCER_KEY_traefik=$CROWDSEC_BOUNCER_KEY
+      - USE_WAL=true
+    volumes:
+      - ${USERDIR}/docker/crowdsec/data:/var/lib/crowdsec/data
+      - ${USERDIR}/docker/crowdsec/config:/etc/crowdsec
+      # O mesmo arquivo que o traefik escreve, so leitura.
+      - ${USERDIR}/docker/traefik2/traefik.log:/var/log/traefik/traefik.log:ro

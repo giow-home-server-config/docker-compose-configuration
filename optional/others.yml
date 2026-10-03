@@ -37,8 +37,8 @@ services:
     environment:
       - SONARR__URL=http://192.168.90.91:8989
       - RADARR__URL=http://192.168.90.92:7878
-      - SONARR__API=2e0e346008e74376a0dda3eeeecef2b6
-      - RADARR__API=984bd2f4b1bd415f8fc706e86b223810
+      - SONARR__API=${SONARR_API_KEY}
+      - RADARR__API=${RADARR_API_KEY}
       - SONARR__QUALITY_PROFILE="Save Space"
       - RADARR__QUALITY_PROFILE="Save Space"
       - SONARR__SEASON_FOLDERS=true

@@ -1,5 +1,3 @@
-version: "3.7"
-
 services:
   # Plex - Media Server
   plex:
@@ -11,8 +9,6 @@ services:
         ipv4_address: 192.168.90.95
     security_opt:
       - no-new-privileges:true
-    devices:
-      - /dev/dri:/dev/dri
     ports:
       - "$PLEX_PORT:32400/tcp" # Plex Server Port
       # Do NOT forward these ports below through your router
@@ -26,9 +22,11 @@ services:
     volumes:
       # Config
       - $USERDIR/docker/plexms:/config
-      # Offload transcoding to RAM if you have enough RAM
+      # Offload transcoding to RAM — KEEP UNCOMMENTED.
+      # /transcode é tmpfs (RAM, transborda p/ swap no root). Comentar isto joga
+      # o scratch de transcode pro overlay no disco root na próxima recriação.
       - /dev/shm:/transcode
-      # - $USERDIR/Media/Transcode/plex_tmp:/transcode
+      # - /mnt/hdd-sata-3/Media/Transcode/:/transcode
       # Disks
       - /mnt/:/disks/other/
       - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
@@ -40,17 +38,35 @@ services:
       PLEX_UID: $PUID
       PLEX_GID: $PGID
       ADVERTISE_IP: http://$SERVER_IP:$PLEX_PORT/
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
     labels:
       - "traefik.enable=true"
       ## HTTP Routers
       - "traefik.http.routers.plex-rtr.entrypoints=https"
-      - "traefik.http.routers.plex-rtr.rule=HostHeader(`plex.$DOMAINNAME`)"
+      - "traefik.http.routers.plex-rtr.rule=Host(`plex.$DOMAINNAME`)"
       - "traefik.http.routers.plex-rtr.tls=true"
       ## Middlewares
       - "traefik.http.routers.plex-rtr.middlewares=chain-no-auth@file"
       ## HTTP Services
       - "traefik.http.routers.plex-rtr.service=plex-svc"
       - "traefik.http.services.plex-svc.loadbalancer.server.port=32400"
+    deploy:
+      resources:
+        # Plex was the only container here without a CPU ceiling, while sonarr,
+        # radarr, qbittorrent and tautulli all had one. On four cores that meant
+        # a burst of software transcodes could take the whole box down - and it
+        # did: sshd and Traefik both stopped answering while four transcoders
+        # ran, taking Home Assistant and the cameras offline with them.
+        # Three cores leaves one for the system no matter what Plex is doing.
+        limits:
+          cpus: "4"
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
 
   # Sonarr - Smart PVR for newsgroup and bittorrent users
   sonarr:
@@ -67,6 +83,8 @@ services:
       - TZ=${TZ}
       - DOCKER_MODS=gilbn/theme.park:sonarr
       - TP_THEME=dark
+      - SONARR__LOG__ANALYTICSENABLED=False
+      - SONARR__AUTH__REQUIRED=DisabledForLocalAddresses
     networks:
       t2_proxy:
         ipv4_address: 192.168.90.91
@@ -82,17 +100,17 @@ services:
       resources:
         limits:
           cpus: "2.5"
-          memory: 1024M
+          memory: 2048M
     labels:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
       - "traefik.http.routers.sonarr-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.sonarr-rtr-bypass.rule=Host(`sonarr.$DOMAINNAME`) && Headers(`X-Api-Key`, `$SONARR_API_KEY`) || Host(`sonarr.$DOMAINNAME`) && Query(`apikey`, `$SONARR_API_KEY`)"
+      - "traefik.http.routers.sonarr-rtr-bypass.rule=Host(`sonarr.$DOMAINNAME`) && Header(`X-Api-Key`, `$SONARR_API_KEY`) || Host(`sonarr.$DOMAINNAME`) && Query(`apikey`, `$SONARR_API_KEY`)"
       - "traefik.http.routers.sonarr-rtr-bypass.priority=100"
       - "traefik.http.routers.sonarr-rtr-bypass.tls=true"
       ## HTTP Routers Auth
       - "traefik.http.routers.sonarr-rtr.entrypoints=https"
-      - "traefik.http.routers.sonarr-rtr.rule=HostHeader(`sonarr.$DOMAINNAME`)"
+      - "traefik.http.routers.sonarr-rtr.rule=Host(`sonarr.$DOMAINNAME`)"
       - "traefik.http.routers.sonarr-rtr.tls=true"
       - "traefik.http.routers.sonarr-rtr.priority=99"
       ## Middlewares
@@ -118,6 +136,8 @@ services:
       - TZ=${TZ}
       - DOCKER_MODS=gilbn/theme.park:radarr
       - TP_THEME=plex
+      - RADARR__LOG__ANALYTICSENABLED=False
+      - RADARR__AUTH__REQUIRED=DisabledForLocalAddresses
     networks:
       t2_proxy:
         ipv4_address: 192.168.90.92
@@ -125,7 +145,7 @@ services:
       resources:
         limits:
           cpus: "2.5"
-          memory: 1024M
+          memory: 2048M
     volumes:
       # Config
       - ${USERDIR}/docker/radarr:/config
@@ -138,12 +158,12 @@ services:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
       - "traefik.http.routers.radarr-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.radarr-rtr-bypass.rule=Host(`radarr.$DOMAINNAME`) && Headers(`X-Api-Key`, `$RADARR_API_KEY`) || Host(`radarr.$DOMAINNAME`) && Query(`apikey`, `$RADARR_API_KEY`)"
+      - "traefik.http.routers.radarr-rtr-bypass.rule=Host(`radarr.$DOMAINNAME`) && Header(`X-Api-Key`, `$RADARR_API_KEY`) || Host(`radarr.$DOMAINNAME`) && Query(`apikey`, `$RADARR_API_KEY`)"
       - "traefik.http.routers.radarr-rtr-bypass.priority=100"
       - "traefik.http.routers.radarr-rtr-bypass.tls=true"
       ## HTTP Routers Auth
       - "traefik.http.routers.radarr-rtr.entrypoints=https"
-      - "traefik.http.routers.radarr-rtr.rule=HostHeader(`radarr.$DOMAINNAME`)"
+      - "traefik.http.routers.radarr-rtr.rule=Host(`radarr.$DOMAINNAME`)"
       - "traefik.http.routers.radarr-rtr.tls=true"
       - "traefik.http.routers.radarr-rtr.priority=99"
       ## Middlewares
@@ -153,76 +173,118 @@ services:
       - "traefik.http.routers.radarr-rtr.service=radarr-svc"
       - "traefik.http.services.radarr-svc.loadbalancer.server.port=7878"
 
-  # Jackett - API Support for your favorite torrent trackers
-  jackett:
-    image: "lscr.io/linuxserver/jackett:latest"
-    container_name: "jackett"
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    ports:
-      - "9003:9117/tcp" # LAN port
-    environment:
-      - PUID=${PUID}
-      - PGID=${PGID}
-      - TZ=${TZ}
-      - AUTO_UPDATE=true
-    networks:
-      t2_proxy:
-        ipv4_address: 192.168.90.89
-    deploy:
-      resources:
-        limits:
-          cpus: "2.5"
-          memory: 1024M
-    volumes:
-      # Config
-      - ${USERDIR}/docker/jackett:/config
-      - "/etc/localtime:/etc/localtime:ro"
-      # Disks
-      - /mnt/:/disks/other/
-      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
-      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
-    labels:
-      - "traefik.enable=true"
-      ## HTTP Routers Auth Bypass for NZB360
-      - "traefik.http.routers.jackett-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.jackett-rtr-bypass.rule=Host(`jackett.$DOMAINNAME`) && Headers(`X-Api-Key`, `$JACKETT_API_KEY`) || Host(`jackett.$DOMAINNAME`) && Query(`apikey`, `$JACKETT_API_KEY`)"
-      - "traefik.http.routers.jackett-rtr-bypass.priority=100"
-      - "traefik.http.routers.jackett-rtr-bypass.tls=true"
-      ## HTTP Routers
-      - "traefik.http.routers.jackett-rtr.entrypoints=https"
-      - "traefik.http.routers.jackett-rtr.rule=HostHeader(`jackett.$DOMAINNAME`)"
-      - "traefik.http.routers.jackett-rtr.priority=99"
-      - "traefik.http.routers.jackett-rtr.tls=true"
-      ## Middlewares
-      - "traefik.http.routers.jackett-rtr-bypass.middlewares=chain-no-auth@file"
-      - "traefik.http.routers.jackett-rtr.middlewares=chain-oauth@file"
-      ## HTTP Services
-      - "traefik.http.routers.jackett-rtr.service=jackett-svc"
-      - "traefik.http.routers.jackett-rtr-bypass.service=jackett-svc"
-      - "traefik.http.services.jackett-svc.loadbalancer.server.port=9117"
+  # prowlarr:
+  #   container_name: prowlarr
+  #   image: ghcr.io/hotio/prowlarr
+  #   networks:
+  #     t2_proxy:
+  #       ipv4_address: 192.168.90.105
+  #   ports:
+  #     - "9016:9696"
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: "2.5"
+  #         memory: 1024M
+  #   environment:
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - TZ=${TZ}
+  #     - UMASK=002
+  #   volumes:
+  #     - ${USERDIR}/docker/prowlarr:/config
+  #   labels:
+  #     - "traefik.enable=true"
+  #     ## HTTP Routers Auth Bypass for NZB360
+  #     - "traefik.http.routers.prowlarr-rtr-bypass.entrypoints=https"
+  #     - "traefik.http.routers.prowlarr-rtr-bypass.rule=Host(`prowlarr.$DOMAINNAME`) && Header(`Nzb360-Header`, `$NZB360_HEADER`)"
+  #     - "traefik.http.routers.prowlarr-rtr-bypass.priority=100"
+  #     - "traefik.http.routers.prowlarr-rtr-bypass.tls=true"
+  #     ## HTTP Routers
+  #     - "traefik.http.routers.prowlarr-rtr.entrypoints=https"
+  #     - "traefik.http.routers.prowlarr-rtr.rule=Host(`prowlarr.$DOMAINNAME`)"
+  #     - "traefik.http.routers.prowlarr-rtr.priority=99"
+  #     - "traefik.http.routers.prowlarr-rtr.tls=true"
+  #     ## Middlewares
+  #     - "traefik.http.routers.prowlarr-rtr-bypass.middlewares=chain-no-auth@file"
+  #     - "traefik.http.routers.prowlarr-rtr.middlewares=chain-oauth@file"
+  #     ## HTTP Services
+  #     - "traefik.http.routers.prowlarr-rtr.service=prowlarr-svc"
+  #     - "traefik.http.routers.prowlarr-rtr-bypass.service=prowlarr-svc"
+  #     - "traefik.http.services.prowlarr-svc.loadbalancer.server.port=9696"
 
-  flaresolverr:
-    # DockerHub mirror flaresolverr/flaresolverr:latest
-    image: ghcr.io/flaresolverr/flaresolverr:latest
-    networks:
-      t2_proxy:
-        ipv4_address: 192.168.90.93
-    deploy:
-      resources:
-        limits:
-          cpus: "2.5"
-          memory: 1024M
-    container_name: flaresolverr
-    environment:
-      - LOG_LEVEL=${LOG_LEVEL:-info}
-      - LOG_HTML=${LOG_HTML:-false}
-      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
-      - TZ=${TZ}
-    ports:
-      - "${PORT:-8191}:8191"
-    restart: unless-stopped
+  # Jackett - API Support for your favorite torrent trackers
+  # MIGRADO para o mini-pc-bd (add-on HAOS) em 2026-10-03 - ver ~/docker/INFRA.md
+#  jackett:
+#    image: "lscr.io/linuxserver/jackett:latest"
+#    container_name: "jackett"
+#    restart: unless-stopped
+#    security_opt:
+#      - no-new-privileges:true
+#    ports:
+#      - "9003:9117/tcp" # LAN port
+#    environment:
+#      - PUID=${PUID}
+#      - PGID=${PGID}
+#      - TZ=${TZ}
+#      - AUTO_UPDATE=true
+#    networks:
+#      t2_proxy:
+#        ipv4_address: 192.168.90.89
+#    #deploy:
+#    #  resources:
+#    #    limits:
+#    #      cpus: "2.5"
+#    #      memory: 1024M
+#    volumes:
+#      # Config
+#      - ${USERDIR}/docker/jackett:/config
+#      - "/etc/localtime:/etc/localtime:ro"
+#      # Disks
+#      - /mnt/:/disks/other/
+#      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+#      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+#    labels:
+#      - "traefik.enable=true"
+#      ## HTTP Routers Auth Bypass for NZB360
+#      - "traefik.http.routers.jackett-rtr-bypass.entrypoints=https"
+#      - "traefik.http.routers.jackett-rtr-bypass.rule=Host(`jackett.$DOMAINNAME`) && Header(`X-Api-Key`, `$JACKETT_API_KEY`) || Host(`jackett.$DOMAINNAME`) && Query(`apikey`, `$JACKETT_API_KEY`)"
+#      - "traefik.http.routers.jackett-rtr-bypass.priority=100"
+#      - "traefik.http.routers.jackett-rtr-bypass.tls=true"
+#      ## HTTP Routers
+#      - "traefik.http.routers.jackett-rtr.entrypoints=https"
+#      - "traefik.http.routers.jackett-rtr.rule=Host(`jackett.$DOMAINNAME`)"
+#      - "traefik.http.routers.jackett-rtr.priority=99"
+#      - "traefik.http.routers.jackett-rtr.tls=true"
+#      ## Middlewares
+#      - "traefik.http.routers.jackett-rtr-bypass.middlewares=chain-no-auth@file"
+#      - "traefik.http.routers.jackett-rtr.middlewares=chain-oauth@file"
+#      ## HTTP Services
+#      - "traefik.http.routers.jackett-rtr.service=jackett-svc"
+#      - "traefik.http.routers.jackett-rtr-bypass.service=jackett-svc"
+#      - "traefik.http.services.jackett-svc.loadbalancer.server.port=9117"
+
+  # MIGRADO para o mini-pc-bd (add-on HAOS) em 2026-10-03 - ver ~/docker/INFRA.md
+#  flaresolverr:
+#    # DockerHub mirror flaresolverr/flaresolverr:latest
+#    image: ghcr.io/flaresolverr/flaresolverr:latest
+#    networks:
+#      t2_proxy:
+#        ipv4_address: 192.168.90.93
+#    #deploy:
+#    #  resources:
+#    #    limits:
+#    #      cpus: "2.5"
+#    #      memory: 1024M
+#    container_name: flaresolverr
+#    environment:
+#      - LOG_LEVEL=${LOG_LEVEL:-info}
+#      - LOG_HTML=${LOG_HTML:-false}
+#      - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+#      - TZ=${TZ}
+#    ports:
+#      - "${PORT:-8191}:8191"
+#    restart: unless-stopped
 
   qbittorrent:
     container_name: qbittorrent
@@ -240,6 +302,7 @@ services:
     deploy:
       resources:
         limits:
+          cpus: "2"
           memory: 3000M
     cap_add:
       - SYS_ADMIN
@@ -274,12 +337,12 @@ services:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
       - "traefik.http.routers.qbittorrent-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.qbittorrent-rtr-bypass.rule=Host(`torrent.$DOMAINNAME`) && Headers(`Nzb360-Header`, `$NZB360_HEADER`)"
+      - "traefik.http.routers.qbittorrent-rtr-bypass.rule=Host(`torrent.$DOMAINNAME`) && Header(`Nzb360-Header`, `$NZB360_HEADER`)"
       - "traefik.http.routers.qbittorrent-rtr-bypass.priority=100"
       - "traefik.http.routers.qbittorrent-rtr-bypass.tls=true"
       ## HTTP Routers
       - "traefik.http.routers.qbittorrent-rtr.entrypoints=https"
-      - "traefik.http.routers.qbittorrent-rtr.rule=HostHeader(`torrent.$DOMAINNAME`)"
+      - "traefik.http.routers.qbittorrent-rtr.rule=Host(`torrent.$DOMAINNAME`)"
       - "traefik.http.routers.qbittorrent-rtr.tls=true"
       - "traefik.http.routers.qbittorrent-rtr.priority=99"
       ## Middlewares
@@ -292,36 +355,57 @@ services:
       - "traefik.http.services.qbittorrent-svc.loadbalancer.server.port=8080"
 
 
-  # Overseerr - Media Requests
-  overseerr:
-   image: lscr.io/linuxserver/overseerr:latest
-   container_name: overseerr
-   restart: unless-stopped
-   networks:
-     t2_proxy:
-       ipv4_address: 192.168.90.96
-   security_opt:
-     - no-new-privileges:true
-   volumes:
-     - ${USERDIR}/docker/overseerr:/config
-     - ${USERDIR}/docker/overseerr/logo-branca.svg:/app/overseerr/public/logo_stacked.svg
-     - ${USERDIR}/docker/overseerr/logo-branca.svg:/app/overseerr/public/logo_full.svg
-     - ${USERDIR}/docker/overseerr/logo-branca.png:/app/overseerr/public/logo_full.png
-   environment:
-     - PUID=$PUID
-     - PGID=$PGID
-     - TZ=$TZ
-   labels:
-     - "traefik.enable=true"
-     ## HTTP Routers
-     - "traefik.http.routers.overseerr-rtr.entrypoints=https"
-     - "traefik.http.routers.overseerr-rtr.rule=HostHeader(`pedidos.$DOMAINNAME`)"
-     - "traefik.http.routers.overseerr-rtr.tls=true"
-     ## Middlewares
-     - "traefik.http.routers.overseerr-rtr.middlewares=chain-no-auth@file"
-     ## HTTP Services
-     - "traefik.http.routers.overseerr-rtr.service=overseerr-svc"
-     - "traefik.http.services.overseerr-svc.loadbalancer.server.port=5055"
+  # Seerr - media requests. Successor to Overseerr, which upstream deprecated
+  # in February 2026 when the Overseerr and Jellyseerr teams merged into one
+  # project. Seerr migrates the existing database automatically on first start.
+  #
+  # Config moved from /config (the linuxserver.io layout) to /app/config, but
+  # the host directory is unchanged so the migration finds the old data. PUID
+  # and PGID are gone because Seerr runs as the non-root `node` user at UID
+  # 1000, which already owns that directory here.
+  #
+  # The custom logo mounts were dropped: they pointed at /app/overseerr/public,
+  # which does not exist in Seerr, and a bind mount to a missing path silently
+  # creates a directory instead of failing.
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    container_name: seerr
+    restart: unless-stopped
+    # Required by Seerr.
+    init: true
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.96
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - ${USERDIR}/docker/overseerr:/app/config
+      # Custom branding, restored after the Seerr migration. The paths moved:
+      # Overseerr served these from /app/overseerr/public, Seerr serves them from
+      # /app/public. All three targets were confirmed to exist in the image
+      # first - a bind mount onto a path the image does not have creates an
+      # empty file instead of failing, which is why they were dropped rather
+      # than guessed at during the migration.
+      - ${USERDIR}/docker/overseerr/logo-branca.svg:/app/public/logo_stacked.svg:ro
+      - ${USERDIR}/docker/overseerr/logo-branca.svg:/app/public/logo_full.svg:ro
+      - ${USERDIR}/docker/overseerr/logo-branca.png:/app/public/logo_full.png:ro
+    environment:
+      - TZ=$TZ
+      - LOG_LEVEL=info
+    ports:
+      - 9020:5055
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.seerr-rtr.entrypoints=https"
+      # Host() rather than HostHeader(): valid in both Traefik v2 and v3.
+      - "traefik.http.routers.seerr-rtr.rule=Host(`pedidos.$DOMAINNAME`)"
+      - "traefik.http.routers.seerr-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.seerr-rtr.middlewares=chain-no-auth@file"
+      ## HTTP Services
+      - "traefik.http.routers.seerr-rtr.service=seerr-svc"
+      - "traefik.http.services.seerr-svc.loadbalancer.server.port=5055"
 
   tautulli:
     image: lscr.io/linuxserver/tautulli:latest
@@ -329,6 +413,11 @@ services:
     networks:
       t2_proxy:
         ipv4_address: 192.168.90.103
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1024M
     environment:
       - PUID=${PUID}
       - PGID=${PGID}
@@ -342,12 +431,12 @@ services:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
       - "traefik.http.routers.tautulli-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.tautulli-rtr-bypass.rule=Host(`tautulli.$DOMAINNAME`) && Headers(`Nzb360-Header`, `$NZB360_HEADER`)"
+      - "traefik.http.routers.tautulli-rtr-bypass.rule=Host(`tautulli.$DOMAINNAME`) && Header(`Nzb360-Header`, `$NZB360_HEADER`)"
       - "traefik.http.routers.tautulli-rtr-bypass.priority=100"
       - "traefik.http.routers.tautulli-rtr-bypass.tls=true"
       ## HTTP Routers
       - "traefik.http.routers.tautulli-rtr.entrypoints=https"
-      - "traefik.http.routers.tautulli-rtr.rule=HostHeader(`tautulli.$DOMAINNAME`)"
+      - "traefik.http.routers.tautulli-rtr.rule=Host(`tautulli.$DOMAINNAME`)"
       - "traefik.http.routers.tautulli-rtr.tls=true"
       - "traefik.http.routers.tautulli-rtr.priority=99"
       ## Middlewares
@@ -358,3 +447,169 @@ services:
       - "traefik.http.routers.tautulli-rtr.service=tautulli-svc"
       - "traefik.http.routers.tautulli-rtr-bypass.service=tautulli-svc"
       - "traefik.http.services.tautulli-svc.loadbalancer.server.port=8181"
+
+  unpackerr:
+    container_name: unpackerr
+    image: ghcr.io/hotio/unpackerr
+    restart: unless-stopped
+    networks:
+      - t2_proxy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.5"
+          memory: 1024M
+    environment:
+      - UMASK=002
+      - PUID=${PUID}
+      - PGID=${PGID}
+      - TZ=${TZ}
+    volumes:
+      # Config
+      - ${USERDIR}/docker/unpackerr:/config
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+
+#  autobrr:
+#    container_name: autobrr
+#    image: ghcr.io/autobrr/autobrr:latest
+#    restart: unless-stopped
+#    user: ${PUID}:${PGID}
+#    environment:
+#      - TZ=${TZ}
+#    volumes:
+#      - ${USERDIR}/docker/autobrr/config:/config
+#    ports:
+#      - 9013:7474
+#    networks:
+#      t2_proxy:
+#        ipv4_address: 192.168.90.115
+#    labels:
+#      - "traefik.enable=true"
+#      ## HTTP Routers
+#      - "traefik.http.routers.autobrr-rtr.entrypoints=https"
+#      - "traefik.http.routers.autobrr-rtr.rule=Host(`autobrr.$DOMAINNAME`)"
+#      - "traefik.http.routers.autobrr-rtr.tls=true"
+#      ## Middlewares
+#      - "traefik.http.routers.autobrr-rtr.middlewares=chain-oauth@file"
+#      ## HTTP Services
+#      - "traefik.http.routers.autobrr-rtr.service=autobrr-svc"
+#      - "traefik.http.services.autobrr-svc.loadbalancer.server.port=7474"
+
+  # seasonpackarr:
+  #   container_name: seasonpackarr
+  #   image: ghcr.io/nuxencs/seasonpackarr
+  #   restart: unless-stopped
+  #   user: ${PUID}:${PGID}
+  #   ports:
+  #     - "9014:42069"
+  #   networks:
+  #     t2_proxy:
+  #       ipv4_address: 192.168.90.116
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: "1.5"
+  #         memory: 1024M
+  #   environment:
+  #     - TZ=${TZ}
+  #   volumes:
+  #     - ${USERDIR}/docker/seasonpackarr:/config
+  #     # Disks
+  #     - /mnt/:/disks/other/
+  #     - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+  #     - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+
+  maintainerr:
+    image: jorenn92/maintainerr:latest
+    container_name: maintainerr
+    user: ${PUID}:${PGID}
+    deploy:
+      resources:
+        limits:
+          cpus: "2.5"
+          memory: 1024M
+    volumes:
+      - ${USERDIR}/docker/maintainerr/config:/opt/data
+      # Disks
+      - /mnt/:/disks/other/
+      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+    environment:
+      - TZ=${TZ}
+#      - DEBUG=true # uncomment to enable debug logs
+#      - UI_PORT=6247 # uncomment to change the UI port (default 6246). Useful if you're on a network where the port is already in use
+#      - API_PORT=3002 # uncomment to change the API port (default 3001). Useful if you're on a network where the port is already in use
+    ports:
+      - 9019:6246
+    restart: unless-stopped
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.118
+    labels:
+      - "traefik.enable=true"
+      ## HTTP Routers
+      - "traefik.http.routers.maintainerr-rtr.entrypoints=https"
+      - "traefik.http.routers.maintainerr-rtr.rule=Host(`maintainerr.$DOMAINNAME`)"
+      - "traefik.http.routers.maintainerr-rtr.tls=true"
+      ## Middlewares
+      - "traefik.http.routers.maintainerr-rtr.middlewares=chain-oauth@file"
+      ## HTTP Services
+      - "traefik.http.routers.maintainerr-rtr.service=maintainerr-svc"
+      - "traefik.http.services.maintainerr-svc.loadbalancer.server.port=6246"
+
+  # arr-mcp - servidor MCP (HTTP em /mcp, bearer token) para Sonarr, Radarr,
+  # Bazarr, Plex, Seerr e qBittorrent. Os servicos e as chaves de API sao
+  # cadastrados pela UI web, nao por env. Escritas vem desligadas por padrao e
+  # precisam ser liberadas por servico. So na LAN de proposito: sem labels do
+  # traefik, porque o token da acesso de escrita a stack inteira.
+  arr-mcp:
+    image: ghcr.io/bardesss/arr-mcp:latest
+    container_name: arr-mcp
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      t2_proxy:
+        ipv4_address: 192.168.90.119
+    ports:
+      - 9021:6060
+    volumes:
+      - ${USERDIR}/docker/arr-mcp:/config
+    environment:
+      - PUID=$PUID
+      - PGID=$PGID
+      - TZ=$TZ
+    deploy:
+      resources:
+        limits:
+          cpus: "1"
+          memory: 512M
+
+#  plex-rewind:
+#    image: giow-rewind # :develop for the latest development version
+#    container_name: plex-rewind
+#    environment:
+#      - NEXTAUTH_SECRET=${PLEX_REWIND_NEXTAUTH_SECRET} # (required) used to encrypt auth JWT token, generate one with `openssl rand -base64 32`
+#      - NEXTAUTH_URL=https://wrapped.giow.dev # (required) change to your domain if you are exposing the app to the internet
+#      - NEXT_PUBLIC_SITE_URL=https://wrapped.giow.dev # (required) change to your domain if you are exposing the app to the internet
+#    volumes:
+#      - ${USERDIR}/docker/plex-rewind:/app/config
+#    restart: unless-stopped
+##    ports:
+##      - 8383:8383
+#    networks:
+#      t2_proxy:
+#    labels:
+#      - "traefik.enable=true"
+#      ## HTTP Routers
+#      - "traefik.http.routers.plex-rewind-rtr.entrypoints=https"
+#      - "traefik.http.routers.plex-rewind-rtr.rule=Host(`wrapped.$DOMAINNAME`)"
+#      - "traefik.http.routers.plex-rewind-rtr.tls=true"
+#      ## Middlewares
+#      - "traefik.http.routers.plex-rewind-rtr.middlewares=chain-no-auth@file"
+#      ## HTTP Services
+#      - "traefik.http.routers.plex-rewind-rtr.service=plex-rewind-svc"
+#      - "traefik.http.services.plex-rewind-svc.loadbalancer.server.port=8383"

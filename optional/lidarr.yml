@@ -16,6 +16,8 @@ services:
       - PUID=$PUID
       - PGID=$PGID
       - TZ=$TZ
+      - LIDARR__LOG__ANALYTICSENABLED=False
+      - LIDARR__AUTH__REQUIRED=DisabledForLocalAddresses
     volumes:
       # Config
       - ${USERDIR}/docker/lidarr:/config

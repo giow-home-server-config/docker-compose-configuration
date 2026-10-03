@@ -1,2 +1,6 @@
 .env
 venv
+# backups locais e segredos
+*.bak*
+.env.*
+!env.example

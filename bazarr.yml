@@ -1,5 +1,3 @@
-version: "3.7"
-
 services:
   bazarr:
     image: lscr.io/linuxserver/bazarr:latest
@@ -13,7 +11,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: "2.5"
+          cpus: "2.0"
           memory: 1024M
     ports:
       - 9015:6767
@@ -33,12 +31,12 @@ services:
       - "traefik.enable=true"
       ## HTTP Routers Auth Bypass for NZB360
       - "traefik.http.routers.bazarr-rtr-bypass.entrypoints=https"
-      - "traefik.http.routers.bazarr-rtr-bypass.rule=Host(`bazarr.$DOMAINNAME`) && Headers(`X-Api-Key`, `$BAZARR_API_KEY`) || Host(`bazarr.$DOMAINNAME`) && Query(`apikey`, `$BAZARR_API_KEY`)"
+      - "traefik.http.routers.bazarr-rtr-bypass.rule=Host(`bazarr.$DOMAINNAME`) && Header(`X-Api-Key`, `$BAZARR_API_KEY`) || Host(`bazarr.$DOMAINNAME`) && Query(`apikey`, `$BAZARR_API_KEY`)"
       - "traefik.http.routers.bazarr-rtr-bypass.priority=100"
       - "traefik.http.routers.bazarr-rtr-bypass.tls=true"
       ## HTTP Routers Auth
       - "traefik.http.routers.bazarr-rtr.entrypoints=https"
-      - "traefik.http.routers.bazarr-rtr.rule=HostHeader(`bazarr.$DOMAINNAME`)"
+      - "traefik.http.routers.bazarr-rtr.rule=Host(`bazarr.$DOMAINNAME`)"
       - "traefik.http.routers.bazarr-rtr.tls=true"
       - "traefik.http.routers.bazarr-rtr.priority=99"
       ## Middlewares

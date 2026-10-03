@@ -1,5 +1,3 @@
-version: "3.7"
-
 services:
   # Samba server running on Alpine
   samba:
@@ -32,41 +30,79 @@ services:
       - 445:445
     entrypoint: ["/bin/sh", "/start_server.sh"]
 
-  syncthing:
-    image: lscr.io/linuxserver/syncthing:latest
-    container_name: syncthing
-    hostname: syncthing #optional
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    networks:
-      t2_proxy:
-        ipv4_address: 192.168.90.81
-    environment:
-      - PUID=$PUID
-      - PGID=$PGID
-      - TZ=$TZ
-    volumes:
-      # Config
-      - ${USERDIR}/docker/syncthing:/config
-      # Disks
-      - /mnt/:/disks/other/
-      - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
-      - ${USERDIR}/Media:/disks/hdd-sata-0/Media
-    ports:
-      # Do NOT forward these ports below through your router
-      - 9005:8384 # Application WebUI
-      - 22000:22000/tcp # Listening port (TCP)
-      - 22000:22000/udp # Listening port (UDP)
-      - 21027:21027/udp # Protocol discovery
-    labels:
-      - "traefik.enable=true"
-      ## HTTP Routers
-      - "traefik.http.routers.syncthing-rtr.entrypoints=https"
-      - "traefik.http.routers.syncthing-rtr.rule=HostHeader(`syncthing.$DOMAINNAME`)"
-      - "traefik.http.routers.syncthing-rtr.tls=true"
-      ## Middlewares
-      - "traefik.http.routers.syncthing-rtr.middlewares=chain-oauth@file"
-      ## HTTP Services
-      - "traefik.http.routers.syncthing-rtr.service=syncthing-svc"
-      - "traefik.http.services.syncthing-svc.loadbalancer.server.port=8384"
+  # syncthing:
+  #   image: lscr.io/linuxserver/syncthing:latest
+  #   container_name: syncthing
+  #   hostname: syncthing #optional
+  #   restart: unless-stopped
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   networks:
+  #     t2_proxy:
+  #       ipv4_address: 192.168.90.81
+  #   environment:
+  #     - PUID=$PUID
+  #     - PGID=$PGID
+  #     - TZ=$TZ
+  #   volumes:
+  #     # Config
+  #     - ${USERDIR}/docker/syncthing:/config
+  #     # Disks
+  #     - /mnt/:/disks/other/
+  #     - ${USERDIR}/Downloads:/disks/hdd-sata-0/Downloads
+  #     - ${USERDIR}/Media:/disks/hdd-sata-0/Media
+  #   ports:
+  #     # Do NOT forward these ports below through your router
+  #     - 9005:8384 # Application WebUI
+  #     - 22000:22000/tcp # Listening port (TCP)
+  #     - 22000:22000/udp # Listening port (UDP)
+  #     - 21027:21027/udp # Protocol discovery
+  #   labels:
+  #     - "traefik.enable=true"
+  #     ## HTTP Routers
+  #     - "traefik.http.routers.syncthing-rtr.entrypoints=https"
+  #     - "traefik.http.routers.syncthing-rtr.rule=Host(`syncthing.$DOMAINNAME`)"
+  #     - "traefik.http.routers.syncthing-rtr.tls=true"
+  #     ## Middlewares
+  #     - "traefik.http.routers.syncthing-rtr.middlewares=chain-oauth@file"
+  #     ## HTTP Services
+  #     - "traefik.http.routers.syncthing-rtr.service=syncthing-svc"
+  #     - "traefik.http.services.syncthing-svc.loadbalancer.server.port=8384"
+
+  # filebrowser:
+  #   image: filebrowser/filebrowser
+  #   container_name: filebrowser
+  #   hostname: filebrowser
+  #   restart: unless-stopped
+  #   security_opt:
+  #     - no-new-privileges:true
+  #   networks:
+  #     t2_proxy:
+  #       ipv4_address: 192.168.90.82
+  #   environment:
+  #     - PUID=${PUID}
+  #     - PGID=${PGID}
+  #     - TZ=${TZ}
+  #     # Optional: set default umask for created files
+  #     #- UMASK=022
+  #   volumes:
+  #     # App config
+  #     - ${USERDIR}/docker/filebrowser:/config
+  #     # Disks (READ-ONLY is safer for a share; drop ":ro" if you want uploads/edits)
+  #     - /mnt/:/srv/disks/other
+  #     - ${USERDIR}/Downloads:/srv/disks/hdd-sata-0/Downloads
+  #     - ${USERDIR}/Media:/srv/disks/hdd-sata-0/Media
+  #     # If you want an upload area, map it RW (remove :ro)
+  #     # - ${USERDIR}/docker/filebrowser/uploads:/srv/uploads
+  #     # No host ports needed—Traefik will route to the container’s port 80
+  #   labels:
+  #     - "traefik.enable=true"
+  #     ## HTTP Routers
+  #     - "traefik.http.routers.filebrowser-rtr.entrypoints=https"
+  #     - "traefik.http.routers.filebrowser-rtr.rule=Host(`share.${DOMAINNAME}`)"
+  #     - "traefik.http.routers.filebrowser-rtr.tls=true"
+  #     ## Middlewares (reuse your OAuth chain; or swap to your preferred middleware)
+  #     - "traefik.http.routers.filebrowser-rtr.middlewares=chain-no-auth@file"
+  #     ## HTTP Service
+  #     - "traefik.http.routers.filebrowser-rtr.service=filebrowser-svc"
+  #     - "traefik.http.services.filebrowser-svc.loadbalancer.server.port=80"

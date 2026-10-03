@@ -1,11 +1,9 @@
-version: "3.7"
-
-services:
-  jmusicbot:
-    image: craumix/jmusicbot
-    container_name: jmusicbot
-    restart: unless-stopped
-    security_opt:
-      - no-new-privileges:true
-    volumes:
-     - ${USERDIR}/docker/discord_bot_music:/jmb/config
+# services:
+#   jmusicbot:
+#     image: craumix/jmusicbot
+#     container_name: jmusicbot
+#     restart: unless-stopped
+#     security_opt:
+#       - no-new-privileges:true
+#     volumes:
+#      - ${USERDIR}/docker/discord_bot_music:/jmb/config

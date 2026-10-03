@@ -1,5 +1,3 @@
-version: "3.7"
-
 services:
   wireguard:
     image: linuxserver/wireguard
@@ -20,7 +18,7 @@ services:
       - SERVERURL=${WIREGUARD_SERVER_URL}
       - SERVERPORT=${WIREGUARD_SERVER_PORT}
       - PEERS=${WIREGUARD_PEERS}
-      - PEERDNS=192.168.1.89 # Pihole DNS
+      - PEERDNS=1.1.1.1
     volumes:
       - $USERDIR/docker/wireguard:/config
       - /lib/modules:/lib/modules

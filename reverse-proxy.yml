@@ -1,10 +1,11 @@
-version: "3.7"
-
 # NETWORKS
 networks:
   t2_proxy:
     external: true
     name: t2_proxy
+  socket_proxy:
+    name: socket_proxy
+    driver: bridge
   default:
     driver: bridge
 
@@ -13,7 +14,7 @@ services:
   # Traefik 2 - Reverse Proxy
   traefik:
     container_name: traefik
-    image: traefik:chevrotin # the chevrotin tag refers to v2.2.x
+    image: traefik:v3.7 # was 2.2.11 (built 2020-09-07) until 2026-07-29
     restart: unless-stopped
     command:
       # CLI arguments
@@ -21,21 +22,26 @@ services:
       - --global.sendAnonymousUsage=true
       - --entryPoints.http.address=:80
       - --entryPoints.https.address=:443 # Allow these IPs to set the X-Forwarded-* headers - Cloudflare IPs: https://www.cloudflare.com/ips/
-      - --entrypoints.https.forwardedHeaders.trustedIPs=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/12,172.64.0.0/13,131.0.72.0/22
+      - --entrypoints.https.forwardedHeaders.trustedIPs=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22,172.20.0.0/16
       - --entryPoints.traefik.address=:8080
       - --api=true
       - --log=true
-      - --log.level=DEBUG # (Default: error) DEBUG, INFO, WARN, ERROR, FATAL, PANIC
+      - --log.level=WARN # (Default: error) DEBUG, INFO, WARN, ERROR, FATAL, PANIC
       - --accessLog=true
       - --accessLog.filePath=/traefik.log
-      - --accessLog.bufferingSize=100
-      - --accessLog.filters.statusCodes=400-499
+      # json + sem filtro de status: o crowdsec le este arquivo e varios cenarios
+      # (bad user agent, probing) precisam ver requests 2xx/3xx, nao so os 4xx.
+      # bufferingSize=0 para a deteccao ser em tempo real, nao em lotes de 100.
+      - --accessLog.format=json
+      - --accessLog.bufferingSize=0
+      # Plugin do bouncer vindo do disco (plugins-local) em vez de baixado do
+      # github no boot: assim o traefik nunca depende da rede para subir.
+      - --experimental.localPlugins.crowdsec.moduleName=github.com/maxlerebourg/crowdsec-bouncer-traefik-plugin
       - --providers.docker=true
-      - --providers.docker.endpoint=unix:///var/run/docker.sock
-      - --providers.docker.defaultrule=HostHeader(`{{ index .Labels "com.docker.compose.service" }}.$DOMAINNAME`)
+      - --providers.docker.endpoint=tcp://socket-proxy:2375
+      - --providers.docker.defaultrule=Host(`{{ index .Labels "com.docker.compose.service" }}.$DOMAINNAME`)
       - --providers.docker.exposedByDefault=false
       - --providers.docker.network=t2_proxy
-      - --providers.docker.swarmMode=false
       - --providers.file.directory=/rules # Load dynamic configuration from one or more .toml or .yml files in a directory.
       - --providers.file.watch=true
       # Cloudflare resolver settings
@@ -43,9 +49,17 @@ services:
       - --certificatesResolvers.dns-cloudflare.acme.storage=/acme.json
       - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.provider=cloudflare
       - --certificatesResolvers.dns-cloudflare.acme.dnsChallenge.resolvers=1.1.1.1:53,1.0.0.1:53
+      # Prometheus Metrics for debugging and visualization
+#      - --metrics.prometheus=true
+#      - --metrics.prometheus.buckets=0.100000, 0.300000, 1.200000, 5.000000
+#      - --metrics.prometheus.addEntryPointsLabels=true
+#      - --metrics.prometheus.addServicesLabels=true
+#      - --entryPoints.metrics.address=:8899
+#      - --metrics.prometheus.entryPoint=metrics
     networks:
       t2_proxy:
         ipv4_address: 192.168.90.254
+      socket_proxy:
     security_opt:
       - no-new-privileges:true
     ports:
@@ -62,25 +76,31 @@ services:
         published: 9007
         protocol: tcp
         mode: host
+      - target: 8899
+        published: 8899
+        protocol: tcp
+        mode: host
     volumes:
       - $USERDIR/docker/traefik2/rules:/rules
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - $USERDIR/docker/traefik2/plugins-local:/plugins-local:ro
       - $USERDIR/docker/traefik2/acme/acme.json:/acme.json
       - $USERDIR/docker/traefik2/traefik.log:/traefik.log
       - $USERDIR/docker/shared:/shared
     environment:
-      - CF_API_EMAIL=$CLOUDFLARE_EMAIL
-      - CF_API_KEY=$CLOUDFLARE_API_KEY
+      # Scoped DNS-edit token instead of the account-wide global key.
+      # Verified before switching: it creates and deletes a TXT record on the
+      # zone, which is exactly what the DNS-01 challenge does.
+      - CF_DNS_API_TOKEN=$CLOUDFLARE_API_TOKEN
     labels:
       - "traefik.enable=true"
       # HTTP-to-HTTPS Redirect
       - "traefik.http.routers.http-catchall.entrypoints=http"
-      - "traefik.http.routers.http-catchall.rule=HostRegexp(`{host:.+}`)"
+      - "traefik.http.routers.http-catchall.rule=HostRegexp(`^.+$`)"
       - "traefik.http.routers.http-catchall.middlewares=redirect-to-https"
       - "traefik.http.middlewares.redirect-to-https.redirectscheme.scheme=https"
       # HTTP Routers
       - "traefik.http.routers.traefik-rtr.entrypoints=https"
-      - "traefik.http.routers.traefik-rtr.rule=HostHeader(`traefik.$DOMAINNAME`)"
+      - "traefik.http.routers.traefik-rtr.rule=Host(`traefik.$DOMAINNAME`)"
       - "traefik.http.routers.traefik-rtr.tls=true"
       - "traefik.http.routers.traefik-rtr.tls.domains[0].main=$DOMAINNAME"
       - "traefik.http.routers.traefik-rtr.tls.domains[0].sans=*.$DOMAINNAME"
@@ -89,10 +109,36 @@ services:
       ## Middlewares
       - "traefik.http.routers.traefik-rtr.middlewares=chain-oauth@file"
 
+  # Docker Socket Proxy - filtered Docker API for Traefik
+  # Traefik reads container labels through this instead of holding the socket
+  # itself. Only the endpoints the docker provider actually uses are enabled,
+  # and POST stays off, so a compromise of the internet-facing proxy cannot
+  # create or start containers.
+  socket-proxy:
+    container_name: socket-proxy
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - socket_proxy
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      CONTAINERS: 1
+      NETWORKS: 1
+      EVENTS: 1
+      POST: 0
+
   # Google OAuth - Single Sign On using OAuth 2.0
   oauth:
     container_name: oauth
-    image: thomseddon/traefik-forward-auth:latest
+    # Imagem montada localmente: nao ha imagem publicada do v2.3.0 (ver
+    # forwardauth/Dockerfile). Precisa ser a mesma versao do add-on
+    # local_forwardauth do mini-pc-bd, que atende oauth.giow.dev.
+    build:
+      context: ./forwardauth
+    image: local/traefik-forward-auth:2.3.0
     restart: unless-stopped
     networks:
       - t2_proxy
@@ -112,12 +158,48 @@ services:
       - LIFETIME=2592000 # 30 days
     labels:
       - "traefik.enable=true"
+      # Imagem local, sem registry de onde puxar: sem isto o watchtower tenta
+      # atualizar e falha todo ciclo. Versao e trocada no Dockerfile.
+      - "com.centurylinklabs.watchtower.enable=false"
       ## HTTP Routers
       - "traefik.http.routers.oauth-rtr.entrypoints=https"
-      - "traefik.http.routers.oauth-rtr.rule=HostHeader(`oauth.$DOMAINNAME`)"
+      - "traefik.http.routers.oauth-rtr.rule=Host(`oauth.$DOMAINNAME`)"
       - "traefik.http.routers.oauth-rtr.tls=true"
       ## HTTP Services
       - "traefik.http.routers.oauth-rtr.service=oauth-svc"
       - "traefik.http.services.oauth-svc.loadbalancer.server.port=4181"
       ## Middlewares
       - "traefik.http.routers.oauth-rtr.middlewares=chain-oauth@file"
+
+#  prometheus:
+#    image: prom/prometheus
+#    container_name: prometheus
+#    restart: unless-stopped
+#    networks:
+#      - t2_proxy
+#    volumes:
+#      - $USERDIR/docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+#    ports:
+#      - "9017:9090"
+
+#  grafana:
+#    image: grafana/grafana
+#    container_name: grafana
+#    restart: unless-stopped
+#    ports:
+#      - "9018:3000"
+#    depends_on:
+#      - prometheus
+#    networks:
+#      - t2_proxy
+#    labels:
+#      - "traefik.enable=true"
+#      ## HTTP Routers
+#      - "traefik.http.routers.grafana-rtr.entrypoints=https"
+#      - "traefik.http.routers.grafana-rtr.rule=Host(`grafana.$DOMAINNAME`)"
+#      - "traefik.http.routers.grafana-rtr.tls=true"
+#      ## Middlewares
+#      - "traefik.http.routers.grafana-rtr.middlewares=chain-oauth@file"
+#      ## HTTP Services
+#      - "traefik.http.routers.grafana-rtr.service=grafana-svc"
+#      - "traefik.http.services.grafana-svc.loadbalancer.server.port=3000"
