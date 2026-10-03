@@ -1,0 +1,3 @@
+# Sem build_from: o Dockerfile usa a imagem oficial do crowdsec como base.
+args:
+  DUMMY: "1"

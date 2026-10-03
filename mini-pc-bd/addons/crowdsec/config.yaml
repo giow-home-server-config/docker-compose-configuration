@@ -1,0 +1,40 @@
+name: CrowdSec
+version: "1.1.0"
+slug: crowdsec
+description: IDS/IPS - le o access log do traefik e alimenta o bouncer do proxy
+arch:
+  - amd64
+init: false
+startup: services
+boot: auto
+# Rede do host para o traefik (tambem host_network) alcancar a LAPI em
+# 127.0.0.1:8080 sem depender do IP do container na rede hassio.
+host_network: true
+map:
+  # /share e onde o traefik escreve o access log.
+  - type: share
+    read_only: true
+options:
+  access_log: /share/traefik/access.log
+  bouncer_name: traefik
+  bouncer_key: ""
+  lapi_port: 8080
+  collections: crowdsecurity/traefik crowdsecurity/base-http-scenarios crowdsecurity/http-cve
+  whitelist_ips: 192.168.1.0/24 172.30.32.0/23 127.0.0.1
+  log_level: info
+  # Gestao de decisoes sem precisar de docker exec (o add-on SSH roda em
+  # protection mode). Aplicadas na subida: unban primeiro, depois ban.
+  unban_ips: ""
+  ban_ips: ""
+  ban_duration: 4h
+schema:
+  access_log: str
+  bouncer_name: str
+  bouncer_key: password
+  lapi_port: port
+  collections: str
+  whitelist_ips: str
+  log_level: list(trace|debug|info|warn|error)
+  unban_ips: str?
+  ban_ips: str?
+  ban_duration: str

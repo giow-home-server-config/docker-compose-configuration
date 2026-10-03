@@ -1,0 +1,34 @@
+name: Traefik Forward Auth
+version: "1.0.0"
+slug: forwardauth
+description: Forward-auth com Google OAuth - mesmo SECRET/cookie do mk1, sessoes compartilhadas
+arch:
+  - amd64
+init: false
+startup: services
+boot: auto
+# Rede do host para o traefik (tambem host_network) alcancar 127.0.0.1:4181
+# sem depender do IP do container na rede hassio.
+host_network: true
+options:
+  client_id: ""
+  client_secret: ""
+  secret: ""
+  cookie_domain: giow.dev
+  auth_host: oauth.giow.dev
+  url_path: /_oauth
+  whitelist: ""
+  lifetime: 2592000
+  port: 4181
+  log_level: warn
+schema:
+  client_id: str
+  client_secret: password
+  secret: password
+  cookie_domain: str
+  auth_host: str
+  url_path: str
+  whitelist: str
+  lifetime: int
+  port: port
+  log_level: list(trace|debug|info|warn|error)

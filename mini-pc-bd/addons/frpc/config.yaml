@@ -1,0 +1,38 @@
+name: frpc
+version: "1.2.0"
+slug: frpc
+description: Cliente frp - registra os dominios no frps e entrega no traefik local
+arch:
+  - amd64
+init: false
+startup: services
+boot: auto
+# Rede do host para alcancar 127.0.0.1:443 (add-on traefik, tambem host_network).
+host_network: true
+map:
+  - type: app_config
+    read_only: false
+  - type: share
+    read_only: true
+options:
+  server_addr: 164.152.53.41
+  server_port: 7000
+  token: ""
+  proxy_name: hass_https
+  custom_domains:
+    - casa.giow.dev
+    - frigate.giow.dev
+    - oauth.giow.dev
+  local_port: 443
+  cert_dir: /share/frp
+  log_level: info
+schema:
+  server_addr: str
+  server_port: port
+  token: password
+  proxy_name: str
+  custom_domains:
+    - str
+  local_port: port
+  cert_dir: str
+  log_level: list(trace|debug|info|warn|error)
