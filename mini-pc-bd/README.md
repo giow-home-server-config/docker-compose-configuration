@@ -8,20 +8,23 @@ GMKtec NucBox G3 Plus (Intel N150), `192.168.1.232`. Contexto e papel desta máq
   profundidade de `/addons` e encontra `mini-pc-bd/addons/<nome>/config.yaml`.
 - O slug é o campo `slug` do `config.yaml`, com prefixo `local_` (ex.: `local_traefik`). Mudar a pasta de lugar não
   muda o slug; as opções e os dados do add-on são mantidos.
-- Para publicar no GitHub, use a **deploy key** `/config/.ssh/homelab_deploy`, que tem escrita só neste repositório.
-  O clone já vem configurado (`core.sshCommand`).
+- **O mini-pc-bd não tem acesso ao GitHub.** Quem commita e publica é o **mk1** (`~/docker/docker-compose-files`),
+  onde roda o pre-commit com gitleaks. O mk1 envia o commit para o clone do mini-pc-bd por SSH (remote
+  `mini-pc-bd`). Lá está configurado `receive.denyCurrentBranch=updateInstead`, então o push atualiza os arquivos.
 
-## Fluxo de mudança
+## Fluxo de mudança (no mk1)
 
 ```bash
-ssh root@192.168.1.232
-cd /addons/homelab
-git pull                                  # pegar mudanças feitas em outro lugar
+cd ~/docker/docker-compose-files
 # ...editar mini-pc-bd/addons/<nome>/...
-ha store reload                           # só se mudou config.yaml (versão, opções, schema)
-ha apps rebuild local_<nome>              # reconstrói a imagem e reinicia
-git add -A && git commit -m "..." && git push
+git add -A && git commit -m "..."         # pre-commit + gitleaks rodam aqui
+mini-pc-bd/deploy.sh <nome> [<nome>...]   # push GitHub + push mini-pc-bd + store reload + rebuild/update
 ```
+
+**Emergência com o mk1 desligado:** edite direto em `/addons/homelab` no mini-pc-bd, faça
+`ha apps rebuild local_<nome>` e **commit lá**. Quando o mk1 voltar, puxe para ele e publique:
+`git pull mini-pc-bd main && git push origin main`. Enquanto houver mudança não commitada no mini-pc-bd, o push do mk1
+é recusado, o que evita sobrescrever o conserto.
 
 O SSH roda no add-on Advanced SSH em *protection mode*, então `docker` não funciona; use o `ha apps …`.
 

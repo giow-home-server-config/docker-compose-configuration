@@ -5,7 +5,8 @@
 >
 > **Repositório:** [giow-home-server-config/docker-compose-configuration](https://github.com/giow-home-server-config/docker-compose-configuration)
 > (privado). No mk1 o clone fica em `~/docker/docker-compose-files`, e `~/docker/INFRA.md` é um atalho para
-> `docs/INFRA.md`. No mini-pc-bd, o clone fica dentro de `/addons`.
+> `docs/INFRA.md`. **Commits e pushes saem do mk1**, que também envia para o clone do mini-pc-bd
+> (`/addons/homelab`) com `mini-pc-bd/deploy.sh`. O mini-pc-bd não tem credencial do GitHub.
 
 ## Visão geral
 

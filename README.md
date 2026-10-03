@@ -47,9 +47,9 @@ O setup do Traefik com Docker labels começou pelo guia
 
 ## mini-pc-bd — add-ons do Home Assistant OS
 
-Ver [`mini-pc-bd/README.md`](mini-pc-bd/README.md). Resumo: este repositório fica clonado dentro de `/addons` no
-mini-pc-bd, e o HA encontra os add-ons em `mini-pc-bd/addons/*`. Para publicar uma mudança: `git pull` seguido de
-`ha apps rebuild local_<nome>`.
+Ver [`mini-pc-bd/README.md`](mini-pc-bd/README.md). Resumo: este repositório fica clonado em `/addons/homelab` no
+mini-pc-bd, e o HA encontra os add-ons em `mini-pc-bd/addons/*`. Edite e commite **no mk1**; depois
+`mini-pc-bd/deploy.sh <add-on>` publica no GitHub, envia para o mini-pc-bd e reconstrói o add-on.
 
 > ⚠️ O HA trata **qualquer arquivo `config.yaml`/`config.json`** deste repositório como add-on. Não crie arquivos com
 > esses nomes fora de `mini-pc-bd/addons/`.
